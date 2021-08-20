@@ -1,53 +1,10 @@
 const std = @import("std");
-const print = std.debug.print;
+const mem = std.mem;
 const log = std.log;
+const print = std.debug.print;
+const assert = std.debug.assert;
 
-const Mirroring = enum {
-    ignore,
-    horizontal,
-    vertical,
-};
-
-const TvStandard = enum {
-    ntsc,
-    pal,
-};
-
-const Header = struct {
-    prg_size: u8,  // 16KB units
-    chr_size: u8,  // 8KB units
-
-    mapper: u8,
-
-    mirroring: Mirroring,
-
-    flags: packed struct {
-        // Flags 6
-        persistent_memory: bool,    // Cartridge contains persistent memory
-        trainer: bool,              // 512-byte trainer at $7000-71FF
-
-        // Flags 7
-        vs_unisystem: bool,
-        playchoice_10: bool,        // Not part of official spec, often ignored
-        new_format: bool,           // Whether the rom uses NES 2.0
-    },
-
-    tv_standard: TvStandard,        // Often ignored. NES Roms barely use this bit
-
-};
-
-const Rom = struct {
-    header: Header = undefined,
-
-    pub fn load(reader: *std.fs.File.Reader) !Rom {
-
-        return Rom {
-            //.header = Header {
-
-            //},
-        };
-    }
-};
+const rom = @import("rom.zig");
 
 pub fn main() anyerror!void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -67,6 +24,6 @@ pub fn main() anyerror!void {
     var file = try std.fs.cwd().openFile(rom_filename, .{ .read = true });
     defer file.close();
 
-    const rom = try Rom.load(&file.reader());
-    print("{}\n", rom);
+    const r = try rom.Rom.load(allocator, &file.reader());
+    //print("{}\n", .{r});
 }
