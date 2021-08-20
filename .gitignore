@@ -1,0 +1,4 @@
+*.nes
+
+zig-cache/
+zig-out/
