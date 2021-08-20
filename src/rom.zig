@@ -30,7 +30,7 @@ pub const Rom = struct {
 
             // Flags 7
             vs_unisystem: bool,         // Can probably be ignored
-            playchoice_10: bool,        // Not part of official spec, often ignored
+            playchoice: bool,           // Not part of official spec, often ignored
             new_format: bool,           // Whether the rom uses NES 2.0
         },
 
@@ -60,7 +60,7 @@ pub const Rom = struct {
                     .trainer = (bytes[6]&0x4) > 0,
 
                     .vs_unisystem = (bytes[7]&0x1) > 0,
-                    .playchoice_10 = (bytes[7]&0x2) > 0,
+                    .playchoice = (bytes[7]&0x2) > 0,
                     .new_format = (bytes[7]&0xc) == 0x8,
                 },
             };
@@ -97,6 +97,8 @@ pub const Rom = struct {
         assert(header_len == buf.len);
 
         // TODO: Handle trainer and playchoice
+        assert(rom.header.flags.trainer == false);
+        assert(rom.header.flags.playchoice == false);
 
         // Allocate memory for program data and read from ROM
         rom.prg_data = try allocator.alloc(u8, rom.header.prg_size);
