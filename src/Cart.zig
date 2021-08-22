@@ -8,13 +8,13 @@ const Cart = @This();
 const CartridgeError = error {
 };
 
-const Header = struct {
-    const Mirroring = enum {
-        horizontal,
-        vertical,
-        ignore,
-    };
+const Mirroring = enum {
+    horizontal,
+    vertical,
+    ignore,
+};
 
+const Header = struct {
     prg_size: u8,  // In units of 16KB
     chr_size: u8,  // In units of 8KB
     mapper: u8,
@@ -32,8 +32,8 @@ const Header = struct {
         new_format: bool,           // Whether the rom uses NES 2.0
     },
 
-    // Parses the first 16 bytes of an iNES file.
-    pub fn parse(bytes: []const u8) Header {
+    /// Parses the first 16 bytes of an iNES file.
+    fn parse(bytes: []const u8) Header {
         assert(bytes.len >= 15);
 
         const header = Header {
@@ -73,7 +73,10 @@ const Header = struct {
     }
 };
 
-header: Header,
+allocator: *mem.Allocator,
+
+mapper: u8,
+mirroring: Mirroring,
 
 trainer: ?[]u8 = null,
 prg_data: []u8,
@@ -86,34 +89,46 @@ playchoice_prom: ?[]u8 = null,
 /// Parse raw bytes from `reader` into usable ROM data
 pub fn init(allocator: *mem.Allocator, reader: anytype) !Cart {
     var cart: Cart = undefined;
+    cart.allocator = allocator;
 
-    // Parse header from rom
+    // Parse header from ROM
     var buf: [16]u8 = undefined;
     const header_len = try reader.read(&buf);
-    cart.header = Header.parse(&buf);
     assert(header_len == buf.len);
+    const header = Header.parse(&buf);
 
     // TODO: Handle trainer and playchoice
-    assert(cart.header.flags.trainer == false);
-    assert(cart.header.flags.playchoice == false);
+    assert(header.flags.trainer == false);
+    assert(header.flags.playchoice == false);
+
+    cart.mapper = header.mapper;
+    cart.mirroring = header.mirroring;
 
     // Allocate memory for program data and read from ROM
-    cart.prg_data = try allocator.alloc(u8, @as(u32, cart.header.prg_size) * 0x4000);
+    cart.prg_data = try allocator.alloc(u8, @as(u32, header.prg_size) * 0x4000);
     const prg_len = try reader.read(cart.prg_data);
-    assert(prg_len == @as(u32, cart.header.prg_size) * 0x4000);
+    assert(prg_len == @as(u32, header.prg_size) * 0x4000);
 
     // Allocate memory for chr data and read from ROM
-    cart.chr_data = try allocator.alloc(u8, @as(u32, cart.header.chr_size) * 0x2000);
+    cart.chr_data = try allocator.alloc(u8, @as(u32, header.chr_size) * 0x2000);
     const chr_len = try reader.read(cart.chr_data);
-    assert(chr_len == @as(u32, cart.header.chr_size) * 0x2000);
+    assert(chr_len == @as(u32, header.chr_size) * 0x2000);
 
     log.info(
         \\Cartridge loaded:
         \\    prg size: {} ({}), chr size: {} ({})
         \\    mapper: {}
-        , .{@as(u32, cart.header.prg_size) * 0x4000, cart.header.prg_size,
-            @as(u32, cart.header.chr_size) * 0x2000, cart.header.chr_size,
-            cart.header.mapper});
+        , .{@as(u32, header.prg_size) * 0x4000, header.prg_size,
+            @as(u32, header.chr_size) * 0x2000, header.chr_size,
+            header.mapper});
 
     return cart;
+}
+
+pub fn deinit(self: Cart) void {
+    self.allocator.free(self.prg_data);
+    self.allocator.free(self.chr_data);
+    if (self.trainer) |trainer| {
+        self.allocator.free(trainer);
+    }
 }
