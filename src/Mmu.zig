@@ -74,7 +74,7 @@ pub fn load(self: *Mmu, cart: Cart) !void {
 }
 
 /// Return a single byte from (virtual) memory
-pub fn getByte(self: Mmu, addr: u16) ?u8 {
+pub fn getByte(self: Mmu, addr: u16) !u8 {
     for (self.maps.items) |map| {
         const map_end = map.start + map.slice.len;
 
@@ -83,7 +83,15 @@ pub fn getByte(self: Mmu, addr: u16) ?u8 {
         }
     }
 
-    return null;
+    return MmuError.UnmappedMemory;
+}
+
+pub fn getBytes(self: Mmu, addr: u16, buffer: []u8) !void {
+    // TODO: This REALLY needs to be optimized.
+
+    for (buffer) |*byte, i| {
+        byte.* = try self.getByte(addr + @intCast(u16, i));
+    }
 }
 
 /// Check whether the provided range is free to map to or already has part of it
