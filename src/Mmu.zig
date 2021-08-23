@@ -74,7 +74,7 @@ pub fn load(self: *Mmu, cart: Cart) !void {
 }
 
 /// Return a single byte from (virtual) memory
-pub fn getByte(self: Mmu, addr: u16) !u8 {
+pub fn readByte(self: Mmu, addr: u16) !u8 {
     for (self.maps.items) |map| {
         const map_end = map.start + map.slice.len;
 
@@ -86,12 +86,25 @@ pub fn getByte(self: Mmu, addr: u16) !u8 {
     return MmuError.UnmappedMemory;
 }
 
-pub fn getBytes(self: Mmu, addr: u16, buffer: []u8) !void {
+pub fn readBytes(self: Mmu, addr: u16, buffer: []u8) !void {
     // TODO: This REALLY needs to be optimized.
 
     for (buffer) |*byte, i| {
-        byte.* = try self.getByte(addr + @intCast(u16, i));
+        byte.* = try self.readByte(addr + @intCast(u16, i));
     }
+}
+
+pub fn writeByte(self: *Mmu, addr: u16, byte: u8) !void {
+    for (self.maps.items) |*map| {
+        const map_end = map.start + map.slice.len;
+
+        if (addr >= map.start and addr < map_end) {
+            map.*.slice[addr - map.start] = byte;
+            return;
+        }
+    }
+
+    return MmuError.UnmappedMemory;
 }
 
 /// Check whether the provided range is free to map to or already has part of it
@@ -113,7 +126,8 @@ fn rangeFree(self: Mmu, start: u32, end: u32) bool {
 }
 
 /// Map a slice to a specific range in virtual memory (excluding `end` itself)
-fn mmap(self: *Mmu, slice: []u8, start: u16, end: u17) !void {
+// TODO: Temporarily public
+pub fn mmap(self: *Mmu, slice: []u8, start: u16, end: u17) !void {
     assert(end > start);
 
     if (!self.rangeFree(start, end)) {
@@ -168,13 +182,13 @@ test "Mmu mapping virtual memory/mirroring" {
     try expectError(MmuError.MemoryAlreadyMapped,
         mmu.mmap(&buf, 0x110, 0x130));
 
-    try expect(mmu.getByte(0x110).? == 0x00);
-    try expect(mmu.getByte(0x11e).? == 0xee);
+    try expect(mmu.readByte(0x110).? == 0x00);
+    try expect(mmu.readByte(0x11e).? == 0xee);
 
     // Mirroring
     try mmu.mmap(&buf, 0x120, 0x140);
 
-    try expect(mmu.getByte(0x13f).? == 0xff);
-    try expect(mmu.getByte(0x13c).? == 0xcc);
-    try expect(mmu.getByte(0x137).? == 0x77);
+    try expect(mmu.readByte(0x13f).? == 0xff);
+    try expect(mmu.readByte(0x13c).? == 0xcc);
+    try expect(mmu.readByte(0x137).? == 0x77);
 }

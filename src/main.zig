@@ -9,13 +9,13 @@ const memDumpOffset = @import("utils.zig").memDumpOffset;
 const Cart = @import("Cart.zig");
 const Mmu = @import("Mmu.zig");
 
-const Cpu = struct {
-    const CpuError = error {
-        /// Tried to handle an unknown opcode
-        UnhandledInstruction,
-    };
+const op = @import("op.zig");
 
+
+pub const Cpu = struct {
     regs: struct {
+        const Regs = @This();
+
         // General purpose
         a: u8,  // Accumulator
         x: u8,  // X index
@@ -36,6 +36,19 @@ const Cpu = struct {
         },
         sp: u8,
         pc: u16,
+
+        fn print(self: Regs) void {
+            const stdout = std.io.getStdOut().writer();
+
+            stdout.print("Regs:\t", .{}) catch unreachable;
+
+            const flag = self.p.flag;
+            stdout.print("N: {}, V: {}, B: {}, D: {}, I: {}, Z: {}, C: {}\n",
+                .{ flag.n, flag.v, flag.b, flag.d, flag.i, flag.z, flag.c }) catch unreachable;
+
+            stdout.print("\tA: {x:0>2}, X: {x:0>2}, Y: {x:0>2}\t SP: {x:0>2}, PC: {x:0>4}\n",
+                .{ self.a, self.x, self.y, self.sp, self.pc }) catch unreachable;
+        }
     } = undefined,
 
     mmu: *Mmu,
@@ -54,7 +67,7 @@ const Cpu = struct {
 
     fn reset(self: *Cpu) void {
         var pc_bytes: [2]u8 = undefined;
-        self.mmu.getBytes(0xfffc, &pc_bytes) catch unreachable;
+        self.mmu.readBytes(0xfffc, &pc_bytes) catch unreachable;
 
         self.regs = .{
             .a = 0,
@@ -70,24 +83,25 @@ const Cpu = struct {
     }
 
     fn tick(self: *Cpu) !void {
-        const inst = self.mmu.getByte(self.regs.pc) catch unreachable;
+        const byte = self.readMemory();
 
-        print("CPU status: {any}\n", .{self.regs.p.flag});
-        print("{x:0>2}\n", .{inst});
+        self.regs.print();
 
-        try self.decode(inst);
+        var opcode = try op.decode(byte);
+
+        print("Operation: ${x:0>2}: {s}; mode: {}, bytes: {}, cycles: {}\n",
+            .{ byte, opcode.mnemonic, opcode.addressing_mode, opcode.bytes, opcode.cycles });
+
+        try opcode.eval(self);
 
         self.timer += 1;
     }
 
-    fn decode(self: *Cpu, opcode: u8) !void {
-        switch(opcode) {
-            0x78 => {
-                self.regs.p.flag.i = true;
-                self.regs.pc += 1;
-            },
-            else => return CpuError.UnhandledInstruction,
-        }
+    pub fn readMemory(self: *Cpu) u8 {
+        const byte = self.mmu.readByte(self.regs.pc) catch unreachable;
+        self.regs.pc += 1;
+
+        return byte;
     }
 };
 
@@ -113,19 +127,35 @@ pub fn main() anyerror!void {
 
     memDumpOffset(cart.prg_data[0..], 0xC000);
 
+    // TODO: Temporary
+    var ram = try allocator.alloc(u8, 0x800);
+
     var mmu = try Mmu.init(allocator);
     defer mmu.deinit();
 
     try mmu.load(cart);
+
+    try mmu.mmap(ram, 0x0000, 0x2000);
 
     var cpu = Cpu.init(&mmu);
 
     while (cpu.tick()) |_| {
 
     } else |err| {
-        if (err == error.UnhandledInstruction) {
-            log.err("Unhandled instruction encountered: {x:0>2}",
-                .{try cpu.mmu.getByte(cpu.regs.pc)});
+        switch (err) {
+            error.UnknownOpcode => {
+                log.err("Unknown opcode encountered: ${x:0>2}",
+                    .{try cpu.mmu.readByte(cpu.regs.pc - 1)});
+            },
+
+            error.UnimplementedOperation => {
+                log.err("Unimplemented operation encountered: ${x:0>2}",
+                    .{try cpu.mmu.readByte(cpu.regs.pc - 1)});
+            },
+
+            else => log.err("CPU ran into an unknown error: {}", .{err}),
         }
+
+        cpu.regs.print();
     }
 }
