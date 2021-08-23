@@ -43,6 +43,12 @@ const AddressingMode = enum {
 // TODO: There needs to be a distinction between read and write functions that
 // need to address memory. Right now, arg0 is sometimes the actual value, and
 // sometimes the address we want to write to. This needs to be consistent.
+//     Idea: union in Args to define whether it is an address, or a value.
+//           Also, each Operation should hold a enum whether it reads or writes
+//           memory. If it reads, we can pre-fetch the data from memory and pass
+//           that. If it writes we could either pass the address and let the
+//           function handle the writing, or return the data to write and
+//           post-write to memory.
 
 const Args = struct {
     arg0: ?u16 = null,
