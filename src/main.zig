@@ -89,8 +89,8 @@ pub const Cpu = struct {
 
         var opcode = try op.decode(byte);
 
-        print("Operation: ${x:0>2}: {s}; mode: {}, bytes: {}, cycles: {}\n",
-            .{ byte, opcode.mnemonic, opcode.addressing_mode, opcode.bytes, opcode.cycles });
+        print("Operation: ${x:0>2}: {s}; mem_mode: {}, addr_mode: {}, bytes: {}, cycles: {}\n",
+            .{ byte, opcode.mnemonic, opcode.mem_mode, opcode.addressing_mode, opcode.bytes, opcode.cycles });
 
         try opcode.eval(self);
 
