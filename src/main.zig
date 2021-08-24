@@ -37,6 +37,8 @@ pub const Cpu = struct {
         sp: u8,
         pc: u16,
 
+        prev: u8,  // Meta register, holds the result of the previous operation
+
         fn print(self: Regs) void {
             const stdout = std.io.getStdOut().writer();
 
@@ -48,6 +50,26 @@ pub const Cpu = struct {
 
             stdout.print("\tA: {x:0>2}, X: {x:0>2}, Y: {x:0>2}\t SP: {x:0>2}, PC: {x:0>4}\n",
                 .{ self.a, self.x, self.y, self.sp, self.pc }) catch unreachable;
+        }
+
+        pub fn c(self: *Regs) bool {
+            // TODO: Implement this
+            return false;
+        }
+
+        pub fn z(self: *Regs) bool {
+            self.p.flag.z = (self.prev == 0);
+            return self.p.flag.z;
+        }
+
+        pub fn v(self: *Regs) bool {
+            // TODO: Implement this...
+            return false;
+        }
+
+        pub fn n(self: *Regs) bool {
+            self.p.flag.n = (self.prev & 0x80) > 0;
+            return self.p.flag.n;
         }
     } = undefined,
 
@@ -77,15 +99,17 @@ pub const Cpu = struct {
             .p = .{ .all = 0b00100000 },
             .sp = 0,
             .pc = @as(u16, pc_bytes[1]) << 8 | pc_bytes[0],
+
+            .prev = 0,
         };
 
         self.timer = 0;
     }
 
     fn tick(self: *Cpu) !void {
-        const byte = self.readMemory();
-
         self.regs.print();
+
+        const byte = self.readMemory();
 
         var opcode = try op.decode(byte);
 
@@ -158,4 +182,8 @@ pub fn main() anyerror!void {
 
         cpu.regs.print();
     }
+
+    var buf: [0x150]u8 = undefined;
+    try mmu.readBytes(0x0000, &buf);
+    memDumpOffset(&buf, 0);
 }

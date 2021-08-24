@@ -22,16 +22,8 @@ const OperationError = error {
 // Also: It might be better to Not set the flags when doing an operation, and
 // instead storing the results of an operation and set it if a flag is actually
 // needed.
-// TODO: There needs to be a distinction between read and write functions that
-// need to address memory. Right now, arg0 is sometimes the actual value, and
-// sometimes the address we want to write to. This needs to be consistent.
-//     Idea: union in Args to define whether it is an address, or a value.
-//           Also, each Operation should hold a enum whether it reads or writes
-//           memory. If it reads, we can pre-fetch the data from memory and pass
-//           that. If it writes we could either pass the address and let the
-//           function handle the writing, or return the data to write and
-//           post-write to memory.
 
+// TODO: Rethink Args, this is useless right now... Only using arg0
 const Args = struct {
     arg0: ?u16 = null,
     arg1: ?u8  = null,
@@ -95,6 +87,8 @@ const Operation = struct {
                 bytes[i] = cpu.readMemory();
             }
 
+            print("Bytes used by operation: {any}\n", .{bytes});
+
             const addr: u16 = switch (self.addressing_mode) {
                 .zero_page => bytes[0],
                 .zero_page_x => bytes[0] +% cpu.regs.x,
@@ -124,13 +118,14 @@ const Operation = struct {
                 else => 0,
             };
 
+            // TODO: Better way to handle Jumps and Branches
             var args: Args = if (self.mem_mode == .read) switch (self.addressing_mode) {
                 .implied => Args{},
                 .accumulator => Args{ .arg0 = cpu.regs.a },
                 .immediate, .relative => Args{ .arg0 = bytes[0] },
 
                 else => Args{ .arg0 = try cpu.mmu.readByte(addr) },
-            } else Args{};
+            } else if (self.addressing_mode == .relative) Args{ .arg0 = bytes[0] } else Args{};
 
             print("{}\n", .{args});
 
@@ -155,70 +150,75 @@ const opcodes = comptime blk: {
     const instruction_definitions = .{
         // Add with Carry
         .{ .mnemonic = "ADC", .mem_mode = .read, .opcodes = .{
-            .{ 0x69, .{ .addressing_mode = .immediate,          .bytes = 2, .cycles = 2 } },
-            .{ 0x65, .{ .addressing_mode = .zero_page,          .bytes = 2, .cycles = 3 } },
-            .{ 0x75, .{ .addressing_mode = .zero_page_x,        .bytes = 2, .cycles = 4 } },
-            .{ 0x6D, .{ .addressing_mode = .absolute,           .bytes = 3, .cycles = 4 } },
-            .{ 0x7D, .{ .addressing_mode = .absolute_x,         .bytes = 3, .cycles = 4 } },
-            .{ 0x79, .{ .addressing_mode = .absolute_y,         .bytes = 3, .cycles = 4 } },
-            .{ 0x61, .{ .addressing_mode = .indexed_indirect,   .bytes = 2, .cycles = 6 } },
-            .{ 0x71, .{ .addressing_mode = .indirect_indexed,   .bytes = 2, .cycles = 5 } },
+            .{0x69, .{ .addressing_mode = .immediate,           .bytes = 2, .cycles = 2 }},
+            .{0x65, .{ .addressing_mode = .zero_page,           .bytes = 2, .cycles = 3 }},
+            .{0x75, .{ .addressing_mode = .zero_page_x,         .bytes = 2, .cycles = 4 }},
+            .{0x6D, .{ .addressing_mode = .absolute,            .bytes = 3, .cycles = 4 }},
+            .{0x7D, .{ .addressing_mode = .absolute_x,          .bytes = 3, .cycles = 4 }},
+            .{0x79, .{ .addressing_mode = .absolute_y,          .bytes = 3, .cycles = 4 }},
+            .{0x61, .{ .addressing_mode = .indexed_indirect,    .bytes = 2, .cycles = 6 }},
+            .{0x71, .{ .addressing_mode = .indirect_indexed,    .bytes = 2, .cycles = 5 }},
+        }},
+
+        .{ .mnemonic = "BPL", .mem_mode = .unused, .opcodes = .{
+            .{0x10, .{ .addressing_mode = .relative,            .bytes = 2, .cycles = 2 }},
         }},
 
         // Clear Decimal Mode
         .{ .mnemonic = "CLD", .mem_mode = .unused, .opcodes = .{
-            .{ 0xD8, .{ .addressing_mode = .implied,            .bytes = 1, .cycles = 2 } },
+            .{0xD8, .{ .addressing_mode = .implied,             .bytes = 1, .cycles = 2 }},
+        }},
+
+        // Jump
+        .{ .mnemonic = "JMP", .mem_mode = .unused, .opcodes = .{
+            .{0x4C, .{ .addressing_mode = .absolute,            .bytes = 3, .cycles = 3 }},
+            .{0x6C, .{ .addressing_mode = .indirect,            .bytes = 3, .cycles = 5 }},
         }},
 
         // Load Accumulator
         .{ .mnemonic = "LDA", .mem_mode = .read, .opcodes = .{
-            .{ 0xA9, .{ .addressing_mode = .immediate,          .bytes = 2, .cycles = 2 } },
-            .{ 0xAD, .{ .addressing_mode = .absolute,           .bytes = 3, .cycles = 4 } },
+            .{0xA9, .{ .addressing_mode = .immediate,           .bytes = 2, .cycles = 2 }},
+            .{0xAD, .{ .addressing_mode = .absolute,            .bytes = 3, .cycles = 4 }},
         }},
 
         // Load X Register
         .{ .mnemonic = "LDX", .mem_mode = .read, .opcodes = .{
-            .{ 0xA2, .{ .addressing_mode = .immediate,          .bytes = 2, .cycles = 2 } },
+            .{0xA2, .{ .addressing_mode = .immediate,           .bytes = 2, .cycles = 2 }},
         }},
 
         // Load Y Register
         .{ .mnemonic = "LDY", .mem_mode = .read, .opcodes = .{
-            .{ 0xA0, .{ .addressing_mode = .immediate,          .bytes = 2, .cycles = 2 } },
+            .{0xA0, .{ .addressing_mode = .immediate,           .bytes = 2, .cycles = 2 }},
         }},
 
         // Store Accumulator
         .{ .mnemonic = "STA", .mem_mode = .write, .opcodes = .{
-            .{ 0x8D, .{ .addressing_mode = .absolute,           .bytes = 3, .cycles = 4 } },
+            .{0x8D, .{ .addressing_mode = .absolute,            .bytes = 3, .cycles = 4 }},
         }},
 
         // Store X Register
         .{ .mnemonic = "STX", .mem_mode = .write, .opcodes = .{
-            .{ 0x8E, .{ .addressing_mode = .absolute,           .bytes = 3, .cycles = 4 } },
+            .{0x8E, .{ .addressing_mode = .absolute,            .bytes = 3, .cycles = 4 }},
         }},
 
         // Store Y Register
         .{ .mnemonic = "STY", .mem_mode = .write, .opcodes = .{
-            .{ 0x8C, .{ .addressing_mode = .absolute,           .bytes = 3, .cycles = 4 } },
+            .{0x8C, .{ .addressing_mode = .absolute,            .bytes = 3, .cycles = 4 }},
         }},
 
         // Set Interrupt Disable
         .{ .mnemonic = "SEI", .mem_mode = .unused, .opcodes = .{
-            .{ 0x78, .{ .addressing_mode = .implied,            .bytes = 1, .cycles = 2 } },
+            .{0x78, .{ .addressing_mode = .implied,             .bytes = 1, .cycles = 2 }},
         }},
 
         // Transfer A to Stack Pointer
         .{ .mnemonic = "TAS", .mem_mode = .unused, .opcodes = .{
-            .{ 0x8A, .{ .addressing_mode = .implied,            .bytes = 1, .cycles = 2 } },
+            .{0x8A, .{ .addressing_mode = .implied,             .bytes = 1, .cycles = 2 }},
         }},
 
         // Transfer X to Stack Pointer
         .{ .mnemonic = "TXS", .mem_mode = .unused, .opcodes = .{
-            .{ 0x9A, .{ .addressing_mode = .implied,            .bytes = 1, .cycles = 2 } },
-        }},
-
-        // Transfer Y to Stack Pointer
-        .{ .mnemonic = "TYS", .mem_mode = .unused, .opcodes = .{
-            .{ 0x98, .{ .addressing_mode = .implied,            .bytes = 1, .cycles = 2 } },
+            .{0x9A, .{ .addressing_mode = .implied,             .bytes = 1, .cycles = 2 }},
         }},
     };
 
@@ -252,22 +252,41 @@ pub fn decode(byte: u8) !Operation {
     return opcodes[byte] orelse OperationError.UnknownOpcode;
 }
 
+inline fn calcBranchOffset(pc: u16, offset: u16) u16 {
+    return if (offset & 0x80 > 0) {
+        // Negative number
+        return pc - -%@intCast(u8, offset);
+    } else {
+        return pc + @truncate(u7, offset);
+    };
+}
+
+fn handleBPL(cpu: *Cpu, op: Operation, args: *Args) void {
+    if (!cpu.regs.n()) {
+        cpu.regs.pc = calcBranchOffset(cpu.regs.pc, args.arg0.?);
+    }
+}
+
 fn handleSEI(cpu: *Cpu, op: Operation, args: *Args) void {
     cpu.regs.p.flag.i = true;
 }
 
 fn handleLDA(cpu: *Cpu, op: Operation, args: *Args) void {
     cpu.regs.a = @intCast(u8, args.arg0.?);
-
+    cpu.regs.prev = cpu.regs.a;
 }
 
 fn handleLDX(cpu: *Cpu, op: Operation, args: *Args) void {
     cpu.regs.x = @intCast(u8, args.arg0.?);
+    cpu.regs.prev = cpu.regs.x;
+}
 
+fn handleLDY(cpu: *Cpu, op: Operation, args: *Args) void {
+    cpu.regs.y = @intCast(u8, args.arg0.?);
+    cpu.regs.prev = cpu.regs.y;
 }
 
 fn handleSTA(cpu: *Cpu, op: Operation, args: *Args) void {
-    //cpu.mmu.writeByte(args.arg0.?, args.arg1.?) catch unreachable;
     args.arg0 = cpu.regs.a;
 }
 
@@ -281,8 +300,4 @@ fn handleTAS(cpu: *Cpu, op: Operation, args: *Args) void {
 
 fn handleTXS(cpu: *Cpu, op: Operation, args: *Args) void {
     cpu.regs.sp = @intCast(u8, cpu.regs.x);
-}
-
-fn handleTYS(cpu: *Cpu, op: Operation, args: *Args) void {
-    cpu.regs.sp = @intCast(u8, cpu.regs.y);
 }
