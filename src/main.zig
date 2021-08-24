@@ -69,6 +69,7 @@ pub const Cpu = struct {
 
         pub fn n(self: *Regs) bool {
             self.p.flag.n = (self.prev & 0x80) > 0;
+            print("{}\n", .{self.p.flag.n});
             return self.p.flag.n;
         }
     } = undefined,
@@ -113,8 +114,8 @@ pub const Cpu = struct {
 
         var opcode = try op.decode(byte);
 
-        print("Operation: ${x:0>2}: {s}; mem_mode: {}, addr_mode: {}, bytes: {}, cycles: {}\n",
-            .{ byte, opcode.mnemonic, opcode.mem_mode, opcode.addressing_mode, opcode.bytes, opcode.cycles });
+        print("Operation: ${x:0>2}: {s}; instruction_type: {}, addr_mode: {}, bytes: {}, cycles: {}\n",
+            .{ byte, opcode.mnemonic, opcode.instruction_type, opcode.addressing_mode, opcode.bytes, opcode.cycles });
 
         try opcode.eval(self);
 
@@ -151,15 +152,26 @@ pub fn main() anyerror!void {
 
     memDumpOffset(cart.prg_data[0..], 0xC000);
 
-    // TODO: Temporary
-    var ram = try allocator.alloc(u8, 0x800);
-
     var mmu = try Mmu.init(allocator);
     defer mmu.deinit();
 
     try mmu.load(cart);
 
-    try mmu.mmap(ram, 0x0000, 0x2000);
+    { // TODO: Temporary
+        var ram = try allocator.alloc(u8, 0x800);
+        var ppu_regs: [8]u8 = .{
+            0,          // PPUCTRL
+            0b00010001, // PPUMASK
+            0b10000000, // PPUSTATUS
+            0,          // OAMADDR
+            0,          // OAMDATA
+            0,          // PPUSCROLL
+            0,          // PPUADDR
+            0,          // OAMDMA
+        };
+        try mmu.mmap(ram, 0x0000, 0x2000);
+        try mmu.mmap(&ppu_regs, 0x2000, 0x2008);
+    }
 
     var cpu = Cpu.init(&mmu);
 
