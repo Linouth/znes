@@ -39,39 +39,39 @@ pub const Cpu = struct {
 
         prev: u8,  // Meta register, holds the result of the previous operation
 
-        fn print(self: Regs) void {
+        fn print(self: *Regs) void {
             const stdout = std.io.getStdOut().writer();
 
             stdout.print("Regs:\t", .{}) catch unreachable;
 
             const flag = self.p.flag;
             stdout.print("N: {}, V: {}, B: {}, D: {}, I: {}, Z: {}, C: {}\n",
-                .{ flag.n, flag.v, flag.b, flag.d, flag.i, flag.z, flag.c }) catch unreachable;
+                //.{ flag.n, flag.v, flag.b, flag.d, flag.i, flag.z, flag.c }) catch unreachable;
+                .{ self.n(), self.v(), flag.b, flag.d, flag.i, self.z(), self.c() }) catch unreachable;
 
             stdout.print("\tA: {x:0>2}, X: {x:0>2}, Y: {x:0>2}\t SP: {x:0>2}, PC: {x:0>4}\n",
                 .{ self.a, self.x, self.y, self.sp, self.pc }) catch unreachable;
         }
 
-        pub fn c(self: *Regs) bool {
+        pub inline fn c(self: *Regs) bool {
             // TODO: Implement this
-            @panic("regs.v() is not implemented yet.");
-            //return false;
+            //@panic("regs.v() is not implemented yet.");
+            return self.p.flag.c;
         }
 
-        pub fn z(self: *Regs) bool {
+        pub inline fn z(self: *Regs) bool {
             self.p.flag.z = (self.prev == 0);
             return self.p.flag.z;
         }
 
-        pub fn v(self: *Regs) bool {
+        pub inline fn v(self: *Regs) bool {
             // TODO: Implement this...
-            @panic("regs.v() is not implemented yet.");
-            //return false;
+            //@panic("regs.v() is not implemented yet.");
+            return self.p.flag.v;
         }
 
-        pub fn n(self: *Regs) bool {
+        pub inline fn n(self: *Regs) bool {
             self.p.flag.n = (self.prev & 0x80) > 0;
-            print("{}\n", .{self.p.flag.n});
             return self.p.flag.n;
         }
     } = undefined,
@@ -103,21 +103,24 @@ pub const Cpu = struct {
             .sp = 0,
             .pc = @as(u16, pc_bytes[1]) << 8 | pc_bytes[0],
 
-            .prev = 0,
+            .prev = 0x77,
         };
 
         self.timer = 0;
     }
 
     fn tick(self: *Cpu) !void {
+        const stdout = std.io.getStdOut().writer();
+
+        stdout.print("\n", .{}) catch unreachable;
         self.regs.print();
 
         const byte = self.readMemory();
 
         var opcode = try op.decode(byte);
 
-        print("Operation: ${x:0>2}: {s}; instruction_type: {}, addr_mode: {}, bytes: {}, cycles: {}\n",
-            .{ byte, opcode.mnemonic, opcode.instruction_type, opcode.addressing_mode, opcode.bytes, opcode.cycles });
+        stdout.print("Operation: ${x:0>2}: {s}; instruction_type: {}, addr_mode: {}, bytes: {}, cycles: {}\n",
+            .{ byte, opcode.mnemonic, opcode.instruction_type, opcode.addressing_mode, opcode.bytes, opcode.cycles }) catch unreachable;
 
         try opcode.eval(self);
 
@@ -164,7 +167,7 @@ pub fn main() anyerror!void {
         var ppu_regs: [8]u8 = .{
             0,          // PPUCTRL
             0b00010001, // PPUMASK
-            0b10000000, // PPUSTATUS
+            0b10000001, // PPUSTATUS
             0,          // OAMADDR
             0,          // OAMDATA
             0,          // PPUSCROLL
@@ -172,12 +175,16 @@ pub fn main() anyerror!void {
             0,          // OAMDMA
         };
         try mmu.mmap(ram, 0x0000, 0x2000);
-        try mmu.mmap(&ppu_regs, 0x2000, 0x2008);
+        try mmu.mmap(&ppu_regs, 0x2000, 0x4000);
     }
 
     var cpu = Cpu.init(&mmu);
 
     while (cpu.tick()) |_| {
+
+        //if (cpu.regs.pc == 0xc313)
+        //if (cpu.regs.pc == 0xc321)
+        //    break;
 
     } else |err| {
         switch (err) {
@@ -197,7 +204,7 @@ pub fn main() anyerror!void {
         cpu.regs.print();
     }
 
-    var buf: [0x150]u8 = undefined;
+    var buf: [0x210]u8 = undefined;
     try mmu.readBytes(0x0000, &buf);
     memDumpOffset(&buf, 0);
 }
