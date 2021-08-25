@@ -42,7 +42,7 @@ const Operation = struct {
 
         /// Any operation with as main function to transfer a value between
         /// registers.
-        register_transfer,
+        register_modify,
 
         /// Any operation that changes PC directly (e.g. Jump and Branch).
         jump,
@@ -183,6 +183,16 @@ const opcodes = comptime blk: {
             .{0xD8, .{ .addressing_mode = .implied,             .bytes = 1, .cycles = 2 }},
         }},
 
+        // Increment X Register
+        .{ .mnemonic = "INX", .instruction_type = .register_modify, .opcodes = .{
+            .{0xE8, .{ .addressing_mode = .implied,             .bytes = 1, .cycles = 2 }},
+        }},
+
+        // Increment Y Register
+        .{ .mnemonic = "INY", .instruction_type = .register_modify, .opcodes = .{
+            .{0xC8, .{ .addressing_mode = .implied,             .bytes = 1, .cycles = 2 }},
+        }},
+
         // Jump
         .{ .mnemonic = "JMP", .instruction_type = .jump, .opcodes = .{
             .{0x4C, .{ .addressing_mode = .absolute,            .bytes = 3, .cycles = 3 }},
@@ -236,7 +246,7 @@ const opcodes = comptime blk: {
         }},
 
         // Transfer X to Stack Pointer
-        .{ .mnemonic = "TXS", .instruction_type = .register_transfer, .opcodes = .{
+        .{ .mnemonic = "TXS", .instruction_type = .register_modify, .opcodes = .{
             .{0x9A, .{ .addressing_mode = .implied,             .bytes = 1, .cycles = 2 }},
         }},
     };
@@ -290,6 +300,16 @@ fn handleBPL(cpu: *Cpu, op: Operation, args: *Args) void {
 
 fn handleSEI(cpu: *Cpu, op: Operation, args: *Args) void {
     cpu.regs.p.flag.i = true;
+}
+
+fn handleINX(cpu: *Cpu , op: Operation, args: *Args) void {
+    cpu.regs.x +%= 1;
+    cpu.regs.prev = cpu.regs.x;
+}
+
+fn handleINY(cpu: *Cpu , op: Operation, args: *Args) void {
+    cpu.regs.y +%= 1;
+    cpu.regs.prev = cpu.regs.y;
 }
 
 fn handleJMP(cpu: *Cpu, op: Operation, args: *Args) void {

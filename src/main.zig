@@ -54,7 +54,8 @@ pub const Cpu = struct {
 
         pub fn c(self: *Regs) bool {
             // TODO: Implement this
-            return false;
+            @panic("regs.v() is not implemented yet.");
+            //return false;
         }
 
         pub fn z(self: *Regs) bool {
@@ -64,7 +65,8 @@ pub const Cpu = struct {
 
         pub fn v(self: *Regs) bool {
             // TODO: Implement this...
-            return false;
+            @panic("regs.v() is not implemented yet.");
+            //return false;
         }
 
         pub fn n(self: *Regs) bool {
