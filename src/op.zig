@@ -136,7 +136,7 @@ const Operation = struct {
                 else => Arg{ .u8 = try cpu.mmu.readByte(addr) },
             } else if (self.instruction_type == .jump) switch (self.addressing_mode) {
                 .relative => Arg{ .u8 = bytes[0] },
-                .absolute => Arg{ .u16 = addr },
+                .absolute => Arg{ .u16 = addr },  // Tricky for combination, in mem read read this addr; in jump this is the arg. Rest is easy
                 .indirect => Arg{ .u8 = try cpu.mmu.readByte(addr) },
 
                 else => unreachable,
@@ -178,10 +178,34 @@ const opcodes = comptime blk: {
             .{0x71, .{ .addressing_mode = .indirect_indexed,    .bytes = 2, .cycles = 5 }},
         }},
 
+        // Logical AND
+        .{ .mnemonic = "AND", .instruction_type = .memory_read, .opcodes = .{
+            .{0x29, .{ .addressing_mode = .immediate,           .bytes = 2, .cycles = 2 }},
+            .{0x25, .{ .addressing_mode = .zero_page,           .bytes = 2, .cycles = 3 }},
+            .{0x35, .{ .addressing_mode = .zero_page_x,         .bytes = 2, .cycles = 4 }},
+            .{0x2D, .{ .addressing_mode = .absolute,            .bytes = 3, .cycles = 4 }},
+            .{0x3D, .{ .addressing_mode = .absolute_x,          .bytes = 3, .cycles = 4 }},
+            .{0x39, .{ .addressing_mode = .absolute_y,          .bytes = 3, .cycles = 4 }},
+            .{0x21, .{ .addressing_mode = .indexed_indirect,    .bytes = 2, .cycles = 6 }},
+            .{0x31, .{ .addressing_mode = .indirect_indexed,    .bytes = 2, .cycles = 5 }},
+        }},
+
+        // Branch if Equal
+        .{ .mnemonic = "BEQ", .instruction_type = .jump, .opcodes = .{
+            .{0xF0, .{ .addressing_mode = .relative,            .bytes = 2, .cycles = 2 }},
+        }},
+
+        // Branch if Minus
+        .{ .mnemonic = "BMI", .instruction_type = .jump, .opcodes = .{
+            .{0x30, .{ .addressing_mode = .relative,            .bytes = 2, .cycles = 2 }},
+        }},
+
+        // Branch if Not Equal
         .{ .mnemonic = "BNE", .instruction_type = .jump, .opcodes = .{
             .{0xD0, .{ .addressing_mode = .relative,            .bytes = 2, .cycles = 2 }},
         }},
 
+        // Branch if Positive
         .{ .mnemonic = "BPL", .instruction_type = .jump, .opcodes = .{
             .{0x10, .{ .addressing_mode = .relative,            .bytes = 2, .cycles = 2 }},
         }},
@@ -189,6 +213,25 @@ const opcodes = comptime blk: {
         // Clear Decimal Mode
         .{ .mnemonic = "CLD", .instruction_type = .flags_set, .opcodes = .{
             .{0xD8, .{ .addressing_mode = .implied,             .bytes = 1, .cycles = 2 }},
+        }},
+
+        // Compare
+        .{ .mnemonic = "CMP", .instruction_type = .memory_read, .opcodes = .{
+            .{0xC9, .{ .addressing_mode = .immediate,           .bytes = 2, .cycles = 2 }},
+            .{0xC5, .{ .addressing_mode = .zero_page,           .bytes = 2, .cycles = 3 }},
+            .{0xD5, .{ .addressing_mode = .zero_page_x,         .bytes = 2, .cycles = 4 }},
+            .{0xCD, .{ .addressing_mode = .absolute,            .bytes = 3, .cycles = 4 }},
+            .{0xDD, .{ .addressing_mode = .absolute_x,          .bytes = 3, .cycles = 4 }},
+            .{0xD9, .{ .addressing_mode = .absolute_y,          .bytes = 3, .cycles = 4 }},
+            .{0xC1, .{ .addressing_mode = .indexed_indirect,    .bytes = 2, .cycles = 6 }},
+            .{0xD1, .{ .addressing_mode = .indirect_indexed,    .bytes = 2, .cycles = 5 }},
+        }},
+
+        // Compare X Register
+        .{ .mnemonic = "CPX", .instruction_type = .memory_read, .opcodes = .{
+            .{0xE0, .{ .addressing_mode = .immediate,           .bytes = 2, .cycles = 2 }},
+            .{0xE4, .{ .addressing_mode = .zero_page,           .bytes = 2, .cycles = 3 }},
+            .{0xEC, .{ .addressing_mode = .absolute,            .bytes = 3, .cycles = 4 }},
         }},
 
         // Compare Y Register
@@ -248,7 +291,13 @@ const opcodes = comptime blk: {
         // Load Accumulator
         .{ .mnemonic = "LDA", .instruction_type = .memory_read, .opcodes = .{
             .{0xA9, .{ .addressing_mode = .immediate,           .bytes = 2, .cycles = 2 }},
+            .{0xA5, .{ .addressing_mode = .zero_page,           .bytes = 2, .cycles = 3 }},
+            .{0xB5, .{ .addressing_mode = .zero_page_x,         .bytes = 2, .cycles = 4 }},
             .{0xAD, .{ .addressing_mode = .absolute,            .bytes = 3, .cycles = 4 }},
+            .{0xBD, .{ .addressing_mode = .absolute_x,          .bytes = 3, .cycles = 4 }},
+            .{0xB9, .{ .addressing_mode = .absolute_y,          .bytes = 3, .cycles = 4 }},
+            .{0xA1, .{ .addressing_mode = .indexed_indirect,    .bytes = 2, .cycles = 6 }},
+            .{0xB1, .{ .addressing_mode = .indirect_indexed,    .bytes = 2, .cycles = 5 }},
         }},
 
         // Load X Register
@@ -263,6 +312,11 @@ const opcodes = comptime blk: {
             .{0xB4, .{ .addressing_mode = .zero_page_x,         .bytes = 2, .cycles = 4 }},
             .{0xAC, .{ .addressing_mode = .absolute,            .bytes = 3, .cycles = 4 }},
             .{0xBC, .{ .addressing_mode = .absolute_x,          .bytes = 3, .cycles = 4 }},
+        }},
+
+        // Return from Subroutine
+        .{ .mnemonic = "RTS", .instruction_type = .jump, .opcodes = .{
+            .{0x60, .{ .addressing_mode = .absolute,            .bytes = 1, .cycles = 6 }},
         }},
 
         // Store Accumulator
@@ -362,7 +416,27 @@ fn handle(cpu: *Cpu, input: u8) Result {
 //    cpu.regs.prev = cpu.regs.a;
 //}
 
+fn handleAND(cpu: *Cpu, arg: Arg) ?u8 {
+    cpu.regs.a &= arg.u8;
+    cpu.regs.prev = cpu.regs.a;
+    return null;
+}
+
 // TODO: For all branches, set the proper cycle (+1 on succeed, +2 on new page)
+fn handleBEQ(cpu: *Cpu, arg: Arg) ?u8 {
+    if (cpu.regs.z()) {
+        cpu.regs.pc = calcBranchOffset(cpu.regs.pc, arg.u8);
+    }
+    return null;
+}
+
+fn handleBMI(cpu: *Cpu, arg: Arg) ?u8 {
+    if (cpu.regs.n()) {
+        cpu.regs.pc = calcBranchOffset(cpu.regs.pc, arg.u8);
+    }
+    return null;
+}
+
 fn handleBNE(cpu: *Cpu, arg: Arg) ?u8 {
     if (!cpu.regs.z()) {
         cpu.regs.pc = calcBranchOffset(cpu.regs.pc, arg.u8);
@@ -480,6 +554,16 @@ fn handleLDX(cpu: *Cpu, arg: Arg) ?u8 {
 fn handleLDY(cpu: *Cpu, arg: Arg) ?u8 {
     cpu.regs.y = arg.u8;
     cpu.regs.prev = cpu.regs.y;
+    return null;
+}
+
+// TODO: This should not receive an arg, it does now.
+fn handleRTS(cpu: *Cpu, arg: Arg) ?u8 {
+    const sp = @as(u16, 0x0100) | cpu.regs.sp;
+    var bytes: [2]u8 = undefined;
+    cpu.mmu.readBytes(sp + 1, &bytes) catch unreachable;
+    cpu.regs.sp += 2;
+    cpu.regs.pc = (@as(u16, bytes[1]) << 8 | bytes[0]) + 1;
     return null;
 }
 

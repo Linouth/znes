@@ -121,6 +121,7 @@ pub const Cpu = struct {
 
         stdout.print("Operation: ${x:0>2}: {s}; instruction_type: {}, addr_mode: {}, bytes: {}, cycles: {}\n",
             .{ byte, opcode.mnemonic, opcode.instruction_type, opcode.addressing_mode, opcode.bytes, opcode.cycles }) catch unreachable;
+        stdout.print("Ticks: {}\n", .{self.timer}) catch unreachable;
 
         try opcode.eval(self);
 
@@ -174,8 +175,10 @@ pub fn main() anyerror!void {
             0,          // PPUADDR
             0,          // OAMDMA
         };
+        var apu_io_regs: [0x18]u8 = .{0} ** 0x18;
         try mmu.mmap(ram, 0x0000, 0x2000);
         try mmu.mmap(&ppu_regs, 0x2000, 0x4000);
+        try mmu.mmap(&apu_io_regs, 0x4000, 0x4018);
     }
 
     var cpu = Cpu.init(&mmu);
