@@ -27,6 +27,9 @@ const Mmu = @This();
 // - Later, be able to switch between buffers during runtime. So, having
 //   multiple banks available and changing the two main slices (8000-bfff and
 //   c000-ffff) to another of these banks.
+// NEXT:
+// - Access control, having different banks / slices for read / write access
+// - Callback / 'dirty-bit' set on reading/writing a specified address or region
 
 const MmuError = error {
     /// Trying to access memory that has not been mapped.

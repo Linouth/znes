@@ -8,6 +8,7 @@ const memDumpOffset = @import("utils.zig").memDumpOffset;
 
 const Cart = @import("Cart.zig");
 const Mmu = @import("Mmu.zig");
+const Ppu = @import("Ppu.zig");
 
 const op = @import("op.zig");
 
@@ -74,15 +75,24 @@ pub const Cpu = struct {
             self.p.flag.n = (self.prev & 0x80) > 0;
             return self.p.flag.n;
         }
-    } = undefined,
+    },
 
     mmu: *Mmu,
 
-    timer: u32 = 0,
+    ticks: u32 = 0,
 
     pub fn init(mmu: *Mmu) Cpu {
 
         var cpu = Cpu {
+            .regs = .{
+                .a = 0,
+                .x = 0,
+                .y = 0,
+                .p = .{ .all = 0x34 },
+                .sp = 0xfd,
+                .pc = undefined,
+                .prev = undefined,
+            },
             .mmu = mmu,
         };
         cpu.reset();
@@ -94,19 +104,11 @@ pub const Cpu = struct {
         var pc_bytes: [2]u8 = undefined;
         self.mmu.readBytes(0xfffc, &pc_bytes) catch unreachable;
 
-        self.regs = .{
-            .a = 0,
-            .x = 0,
-            .y = 0,
+        self.regs.p = .{ .all = self.regs.p.all | 0x04 };
+        self.regs.sp = self.regs.sp - 3;
+        self.regs.pc = @as(u16, pc_bytes[1]) << 8 | pc_bytes[0];
 
-            .p = .{ .all = 0b00100000 },
-            .sp = 0,
-            .pc = @as(u16, pc_bytes[1]) << 8 | pc_bytes[0],
-
-            .prev = 0x77,
-        };
-
-        self.timer = 0;
+        self.ticks = 0;
     }
 
     fn tick(self: *Cpu) !void {
@@ -121,11 +123,11 @@ pub const Cpu = struct {
 
         stdout.print("Operation: ${x:0>2}: {s}; instruction_type: {}, addr_mode: {}, bytes: {}, cycles: {}\n",
             .{ byte, opcode.mnemonic, opcode.instruction_type, opcode.addressing_mode, opcode.bytes, opcode.cycles }) catch unreachable;
-        stdout.print("Ticks: {}\n", .{self.timer}) catch unreachable;
+        stdout.print("Ticks: {}\n", .{self.ticks}) catch unreachable;
 
         try opcode.eval(self);
 
-        self.timer += 1;
+        self.ticks += 1;
     }
 
     pub fn readMemory(self: *Cpu) u8 {
@@ -163,27 +165,29 @@ pub fn main() anyerror!void {
 
     try mmu.load(cart);
 
-    { // TODO: Temporary
-        var ram = try allocator.alloc(u8, 0x800);
-        var ppu_regs: [8]u8 = .{
-            0,          // PPUCTRL
-            0b00010001, // PPUMASK
-            0b10000001, // PPUSTATUS
-            0,          // OAMADDR
-            0,          // OAMDATA
-            0,          // PPUSCROLL
-            0,          // PPUADDR
-            0,          // OAMDMA
-        };
-        var apu_io_regs: [0x18]u8 = .{0} ** 0x18;
-        try mmu.mmap(ram, 0x0000, 0x2000);
-        try mmu.mmap(&ppu_regs, 0x2000, 0x4000);
-        try mmu.mmap(&apu_io_regs, 0x4000, 0x4018);
-    }
+    // TODO: Temporary
+    var ram = try allocator.alloc(u8, 0x800);
+    var ppu = Ppu.init();
+    //var ppu_regs: [8]u8 = .{
+    //    0,          // PPUCTRL
+    //    0b00010001, // PPUMASK
+    //    0b00000001, // PPUSTATUS
+    //    0,          // OAMADDR
+    //    0,          // OAMDATA
+    //    0,          // PPUSCROLL
+    //    0,          // PPUADDR
+    //    0,          // OAMDMA
+    //};
+    var apu_io_regs: [0x18]u8 = .{0} ** 0x18;
+    try mmu.mmap(ram, 0x0000, 0x2000);
+    try mmu.mmap(@ptrCast([*]u8, &ppu.ports)[0..8], 0x2000, 0x4000);
+    try mmu.mmap(&apu_io_regs, 0x4000, 0x4018);
 
     var cpu = Cpu.init(&mmu);
 
     while (cpu.tick()) |_| {
+
+        ppu.tick();
 
         //if (cpu.regs.pc == 0xc313)
         //if (cpu.regs.pc == 0xc321)
