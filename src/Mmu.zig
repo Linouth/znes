@@ -29,6 +29,11 @@ const Mmu = @This();
 //   c000-ffff) to another of these banks.
 // NEXT:
 // - Access control, having different banks / slices for read / write access
+//   Probably best to implement a better data structure and have one for reads
+//   and one for writes. Or multiple entries per address. ( Map{ ..., .ac = .rw} )
+//   - A binary search tree possibly? with as indexing value the starting
+//     address. Since the map is only once being set-up at the start, maybe sort
+//     the BST once it is ready. (Root nodes as the median value?)
 // - Callback / 'dirty-bit' set on reading/writing a specified address or region
 
 const MmuError = error {
