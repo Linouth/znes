@@ -1,6 +1,8 @@
 const std = @import("std");
 const mem = std.mem;
 const log = std.log;
+const sort = std.sort;
+const math = std.math;
 
 const ArrayList = std.ArrayList;
 
@@ -31,9 +33,6 @@ const Mmu = @This();
 // - Access control, having different banks / slices for read / write access
 //   Probably best to implement a better data structure and have one for reads
 //   and one for writes. Or multiple entries per address. ( Map{ ..., .ac = .rw} )
-//   - A binary search tree possibly? with as indexing value the starting
-//     address. Since the map is only once being set-up at the start, maybe sort
-//     the BST once it is ready. (Root nodes as the median value?)
 // - Callback / 'dirty-bit' set on reading/writing a specified address or region
 
 const MmuError = error {
@@ -45,22 +44,36 @@ const MmuError = error {
 
     /// The cartridges mapper is not supported.
     UnsupportedMapper,
+
+    /// Trying to write to memory that does not have the writable flag set.
+    WritingROMemory
 };
 
 const Map = struct {
     start: u16,
+    end: u17,
     slice: []u8,
+
+    writable: bool,
+
+    fn startLessThan(ctx: void, lhs: Map, rhs: Map) bool {
+        return lhs.start < rhs.start;
+    }
 };
 
 allocator: *mem.Allocator,
 
-// TODO: Add some trie so that we don't have to loop over every mapping on every
-// single byte read.
+// On setting up the MMU / Mapper, different memory maps are appended to this
+// array. When that is finished, the array is sorted. On reading bytes, the
+// start address of these maps is checked with a binary search.
+// TODO: This can still be optimized greatly, preferably not having to search
+// for the correct map and just use some lookup table.
 maps: ArrayList(Map),
 
 pub fn init(allocator: *mem.Allocator) !Mmu {
     return Mmu {
         .allocator = allocator,
+        //.maps = try ArrayList(Map).initCapacity(allocator, 32),
         .maps = ArrayList(Map).init(allocator),
     };
 }
@@ -81,51 +94,51 @@ pub fn load(self: *Mmu, cart: Cart) !void {
     }
 }
 
-/// Return a single byte from (virtual) memory
-pub fn readByte(self: Mmu, addr: u16) !u8 {
-    for (self.maps.items) |map| {
-        const map_end = map.start + map.slice.len;
+// TODO: Temp public
+pub fn sortMaps(self: *Mmu) void {
+    sort.sort(Map, self.maps.items, {}, Map.startLessThan);
+}
 
-        if (addr >= map.start and addr < map_end) {
-            return map.slice[addr - map.start];
+/// Binary search algo that checks if the needle falls in between `start` and
+/// `end`.
+fn searchMap(self: Mmu, addr: u16) ?Map {
+    const items = self.maps.items;
+
+    var left: usize = 0;
+    var right: usize = items.len;
+
+    var out: ?Map = null;
+
+    while (left < right) {
+        const mid = left + (right - left) / 2;
+
+        if (addr == items[mid].start) {
+            return items[mid];
+        } else if (addr < items[mid].start) {
+            right = mid;
+        } else if (addr > items[mid].start) {
+            left = mid + 1;
+            out = items[mid];
         }
     }
 
-    return MmuError.UnmappedMemory;
-}
-
-pub fn readBytes(self: Mmu, addr: u16, buffer: []u8) !void {
-    // TODO: This REALLY needs to be optimized.
-
-    for (buffer) |*byte, i| {
-        byte.* = try self.readByte(addr + @intCast(u16, i));
+    if (out) |map| {
+        // Only return map if the requested addr actually falls in the found map
+        if (addr < map.end) return map;
     }
-}
-
-pub fn writeByte(self: *Mmu, addr: u16, byte: u8) !void {
-    for (self.maps.items) |*map| {
-        const map_end = map.start + map.slice.len;
-
-        if (addr >= map.start and addr < map_end) {
-            map.*.slice[addr - map.start] = byte;
-            return;
-        }
-    }
-
-    return MmuError.UnmappedMemory;
+    return null;
 }
 
 /// Check whether the provided range is free to map to or already has part of it
-/// mapped.
+/// mapped. This function checks **each** item in order, from start to finish.
+/// (So use it sparingly)
 ///
 /// It could be nice to modify this function so that it can indicate which part
 /// is already mapped and which part is free in a range.
 fn rangeFree(self: Mmu, start: u32, end: u32) bool {
     for (self.maps.items) |map| {
-        const map_end = map.start + map.slice.len;
-
-        if ((start >= map.start and start < map_end)
-            or (end > map.start and end <= map_end)) {
+        if ((start >= map.start and start < map.end)
+            or (end > map.start and end <= map.end)) {
             return false;
         }
     }
@@ -135,40 +148,68 @@ fn rangeFree(self: Mmu, start: u32, end: u32) bool {
 
 /// Map a slice to a specific range in virtual memory (excluding `end` itself)
 // TODO: Temporarily public
-pub fn mmap(self: *Mmu, slice: []u8, start: u16, end: u17) !void {
-    assert(end > start);
+pub fn mmap(self: *Mmu, map: Map) !void {
+    assert(map.end > map.start);
 
-    if (!self.rangeFree(start, end)) {
+    if (!self.rangeFree(map.start, map.end)) {
         return MmuError.MemoryAlreadyMapped;
     }
 
-    const total_len = end - start;
-    if (total_len > slice.len) {
+    const total_len = map.end - map.start;
+    if (total_len > map.slice.len) {
         log.warn("The area to map ({}) is larger than the provided slice ({}), mirroring:",
-            .{total_len, slice.len});
+            .{total_len, map.slice.len});
     }
 
     log.info("Mapping 0x{x} bytes to 0x{x}-0x{x}",
-        .{total_len, start, end-1});
+        .{total_len, map.start, map.end-1});
 
-    var addr: u17 = start;
-    var len: u17 = 0;
-    while (addr < end) : (addr += len) {
-        len = std.math.min(end - addr, slice.len);
+    try self.maps.append(map);
+}
 
-        const map = Map {
-            .start = @truncate(u16, addr),
-            .slice = slice[0..len]
-        };
-
-        try self.maps.append(map);
+/// Return a single byte from (virtual) memory
+pub fn readByte(self: Mmu, addr: u16) !u8 {
+    if (self.searchMap(addr)) |map| {
+        return map.slice[(addr - map.start) % map.slice.len];
     }
+
+    return MmuError.UnmappedMemory;
+}
+
+pub fn readBytes(self: Mmu, addr: u16, buffer: []u8) !void {
+    // TODO: This should be optimized. Not looking up each single byte. We could
+    // assume the requested slice is inside one map. Then if it is not, look for
+    // the corresponding map. If we do this, there needs to be some local buffer
+    // to create a single slice from the multiple requested slices.
+
+    for (buffer) |*byte, i| {
+        byte.* = try self.readByte(addr + @intCast(u16, i));
+    }
+}
+
+pub fn writeByte(self: *Mmu, addr: u16, byte: u8) !void {
+    if (self.searchMap(addr)) |map| {
+        if (!map.writable) return MmuError.WritingROMemory;
+        map.slice[(addr - map.start) % map.slice.len] = byte;
+        return;
+    }
+
+    //for (self.maps.items) |*map| {
+    //    const map_end = map.start + map.slice.len;
+
+    //    if (addr >= map.start and addr < map_end) {
+    //        map.*.slice[addr - map.start] = byte;
+    //        return;
+    //    }
+    //}
+
+    return MmuError.UnmappedMemory;
 }
 
 /// Temporary mapper for the iNES 0 mapper
 fn tmp_mapper_nrom(self: *Mmu, cart: Cart) !void {
-    try self.mmap(cart.chr_data, 0x6000, 0x8000);
-    try self.mmap(cart.prg_data, 0x8000, 0x10000);
+    try self.mmap(.{.slice = cart.chr_data, .start = 0x6000, .end = 0x8000, .writable = false});
+    try self.mmap(.{.slice = cart.prg_data, .start = 0x8000, .end = 0x10000, .writable = true});
 }
 
 
