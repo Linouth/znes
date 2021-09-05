@@ -73,7 +73,6 @@ maps: ArrayList(Map),
 pub fn init(allocator: *mem.Allocator) !Mmu {
     return Mmu {
         .allocator = allocator,
-        //.maps = try ArrayList(Map).initCapacity(allocator, 32),
         .maps = ArrayList(Map).init(allocator),
     };
 }
@@ -194,15 +193,6 @@ pub fn writeByte(self: *Mmu, addr: u16, byte: u8) !void {
         return;
     }
 
-    //for (self.maps.items) |*map| {
-    //    const map_end = map.start + map.slice.len;
-
-    //    if (addr >= map.start and addr < map_end) {
-    //        map.*.slice[addr - map.start] = byte;
-    //        return;
-    //    }
-    //}
-
     return MmuError.UnmappedMemory;
 }
 
@@ -225,19 +215,19 @@ test "Mmu mapping virtual memory/mirroring" {
                         0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff};
 
     // Regular mapping
-    try mmu.mmap(&buf, 0x100, 0x110);
-    try mmu.mmap(&buf, 0x110, 0x120);
+    try mmu.mmap(.{.slice = &buf, .start = 0x100, .end = 0x110, .writable = false});
+    try mmu.mmap(.{.slice = &buf, .start = 0x110, .end = 0x120, .writable = false});
 
     try expectError(MmuError.MemoryAlreadyMapped,
-        mmu.mmap(&buf, 0x110, 0x130));
+        mmu.mmap(.{.slice = &buf, .start = 0x110, .end = 0x130, .writable = false}));
 
-    try expect(mmu.readByte(0x110).? == 0x00);
-    try expect(mmu.readByte(0x11e).? == 0xee);
+    try expect((try mmu.readByte(0x110)) == 0x00);
+    try expect((try mmu.readByte(0x11e)) == 0xee);
 
     // Mirroring
-    try mmu.mmap(&buf, 0x120, 0x140);
+    try mmu.mmap(.{.slice = &buf, .start = 0x120, .end = 0x140, .writable = false});
 
-    try expect(mmu.readByte(0x13f).? == 0xff);
-    try expect(mmu.readByte(0x13c).? == 0xcc);
-    try expect(mmu.readByte(0x137).? == 0x77);
+    try expect((try mmu.readByte(0x13f)) == 0xff);
+    try expect((try mmu.readByte(0x13c)) == 0xcc);
+    try expect((try mmu.readByte(0x137)) == 0x77);
 }
