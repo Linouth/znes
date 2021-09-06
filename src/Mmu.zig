@@ -10,6 +10,7 @@ const assert = std.debug.assert;
 const print = std.debug.print;
 
 const Cart = @import("Cart.zig");
+const Ppu = @import("Ppu.zig");
 const Mmu = @This();
 
 // As of now only implements the 0 iNES mapper (The simplest one).
@@ -35,6 +36,25 @@ const Mmu = @This();
 //   and one for writes. Or multiple entries per address. ( Map{ ..., .ac = .rw} )
 // - Callback / 'dirty-bit' set on reading/writing a specified address or region
 
+
+pub const Callback = struct {
+    ctx: ?*c_void,
+    func: fn(ctx: *c_void, map: Map, addr: u16, data: ?u8) void,
+};
+pub fn MemoryCallback(comptime T: type, context: T, function: fn(ctx: T, map: Map, addr: u16, data: ?u8) void) Callback {
+    const T = @TypeOf(context);
+
+    //return struct {
+    //    context: T = context,
+    //    function: fn (ctx: T, map: Map, addr: u16, data: ?u8) void,
+    //};
+
+    return Callback {
+        .context = context,
+        .function = function,
+    };
+}
+
 const MmuError = error {
     /// Trying to access memory that has not been mapped.
     UnmappedMemory,
@@ -49,12 +69,15 @@ const MmuError = error {
     WritingROMemory
 };
 
-const Map = struct {
+pub const Map = struct {
     start: u16,
     end: u17,
     slice: []u8,
 
     writable: bool,
+
+    //callback: ?fn (ctx: *void, map: Map, addr: u16, data: ?u8) void = null,
+    callback: ?Callback = null,
 
     fn startLessThan(ctx: void, lhs: Map, rhs: Map) bool {
         return lhs.start < rhs.start;
@@ -111,13 +134,13 @@ fn searchMap(self: Mmu, addr: u16) ?Map {
     while (left < right) {
         const mid = left + (right - left) / 2;
 
-        if (addr == items[mid].start) {
-            return items[mid];
-        } else if (addr < items[mid].start) {
-            right = mid;
-        } else if (addr > items[mid].start) {
-            left = mid + 1;
-            out = items[mid];
+        switch (math.order(addr, items[mid].start)) {
+            .eq => return items[mid],
+            .lt => right = mid,
+            .gt => {
+                left = mid + 1;
+                out = items[mid];
+            },
         }
     }
 
@@ -163,12 +186,19 @@ pub fn mmap(self: *Mmu, map: Map) !void {
     log.info("Mapping 0x{x} bytes to 0x{x}-0x{x}",
         .{total_len, map.start, map.end-1});
 
+    print("{}\n", .{map.callback});
+
     try self.maps.append(map);
 }
 
 /// Return a single byte from (virtual) memory
 pub fn readByte(self: Mmu, addr: u16) !u8 {
     if (self.searchMap(addr)) |map| {
+        print("{}\n", .{map.callback});
+        if (map.callback) |cb| {
+            cb.func(cb.ctx.?, map, addr, null);
+        }
+
         return map.slice[(addr - map.start) % map.slice.len];
     }
 
@@ -189,6 +219,11 @@ pub fn readBytes(self: Mmu, addr: u16, buffer: []u8) !void {
 pub fn writeByte(self: *Mmu, addr: u16, byte: u8) !void {
     if (self.searchMap(addr)) |map| {
         if (!map.writable) return MmuError.WritingROMemory;
+
+        //if (map.callback) |cb| {
+        //    cb.func(cb.ctx, map, addr, byte);
+        //}
+
         map.slice[(addr - map.start) % map.slice.len] = byte;
         return;
     }
@@ -199,7 +234,7 @@ pub fn writeByte(self: *Mmu, addr: u16, byte: u8) !void {
 /// Temporary mapper for the iNES 0 mapper
 fn tmp_mapper_nrom(self: *Mmu, cart: Cart) !void {
     try self.mmap(.{.slice = cart.chr_data, .start = 0x6000, .end = 0x8000, .writable = false});
-    try self.mmap(.{.slice = cart.prg_data, .start = 0x8000, .end = 0x10000, .writable = true});
+    try self.mmap(.{.slice = cart.prg_data, .start = 0x8000, .end = 0x10000, .writable = false});
 }
 
 

@@ -180,7 +180,9 @@ pub fn main() anyerror!void {
     //};
     var apu_io_regs: [0x18]u8 = .{0} ** 0x18;
     try mmu.mmap(.{ .slice = ram, .start = 0x0000, .end = 0x2000, .writable = true });
-    try mmu.mmap(.{ .slice = @ptrCast([*]u8, &ppu.ports)[0..8], .start = 0x2000, .end = 0x4000, .writable = true });
+    //try mmu.mmap(.{ .slice = @ptrCast([*]u8, &ppu.ports)[0..8], .start = 0x2000, .end = 0x4000, .writable = true });
+    //try mmu.mmap(.{ .slice = @ptrCast([*]u8, &ppu.ports)[0..8], .start = 0x2000, .end = 0x4000, .writable = true, .callback = .{ .ctx = &ppu, .func = Ppu.memoryCallback } });
+    try mmu.mmap(.{ .slice = @ptrCast([*]u8, &ppu.ports)[0..8], .start = 0x2000, .end = 0x4000, .writable = true, .callback = Mmu.Callback{.ctx = &ppu, .func = Ppu.memoryCallback} });
     try mmu.mmap(.{ .slice = &apu_io_regs, .start = 0x4000, .end = 0x4018, .writable = true });
     mmu.sortMaps();
 
