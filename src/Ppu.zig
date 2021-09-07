@@ -2,7 +2,7 @@ const std = @import("std");
 const print = std.debug.print;
 const log = std.log;
 
-const Map = @import("Mmu.zig").Map;
+const Mmu = @import("Mmu.zig");
 const Ppu = @This();
 
 
@@ -50,8 +50,9 @@ const Ports = packed struct {
 };
 
 ports: Ports,
-
 vblank_clear: bool = false,
+
+ticks: u32 = 0,
 
 pub fn init() Ppu {
     return Ppu{
@@ -69,55 +70,37 @@ pub fn reset(self: *Ppu) void {
 
 // TODO: Try to implement some callback/hook on mem read/write instead of polling
 pub fn tick(self: *Ppu) void {
-    //const state = struct {
-    //    var prev_ports: Ports = .{
-    //        .ppuctrl = 0,
-    //        .ppumask = 0,
-    //        .ppustatus = 0b10100000,
-    //        .oamaddr = 0,
-    //        .oamdata = 0,
-    //        .ppuscroll = 0,
-    //        .ppuaddr = 0,
-    //        .ppudata = 0,
-    //        .oamdma = 0,
-    //    };
-    //};
-
-    //const ports = @ptrCast(*[9]u8, &self.ports);
-    //const prev_ports = @ptrCast(*[9]u8, &state.prev_ports);
-
-    //if (!std.mem.eql(u8, prev_ports, ports)) {
-    //    print("PPU State changed!\n", .{});
-    //    state.prev_ports = self.ports;
-
-    //    @panic("");
-    //}
+    if (self.ticks % 1024 == 0) {
+        print("vBlank set to true\n", .{});
+        self.ports.ppustatus.vblank = true;
+    }
 
     if (self.vblank_clear) {
         print("vBlankClear SET!\n", .{});
         self.ports.ppustatus.vblank = false;
         self.vblank_clear = false;
     }
+
+    self.ticks += 1;
 }
 
-pub fn memoryCallback(ctx: *c_void, map: Map, addr: u16, data: ?u8) void {
-    const self: *Ppu = @ptrCast(*Ppu, ctx);
-    print("Inside CB {}\n", .{self});
+pub fn memoryCallback(ctx: *c_void, map: Mmu.Map, addr: u16, data: ?u8) void {
+    const self = @ptrCast(*Ppu, @alignCast(@alignOf(Ppu), ctx));
 
-    //print("PPU Memory access; ", .{});
-    //if (data) |dat| {
-    //    print("write {x:0>2};\t", .{dat});
-    //} else {
-    //    print("read;\t", .{});
-    //}
-    //print("addr {x:0>4}\n", .{addr});
+    print("PPU Memory access; ", .{});
+    if (data) |dat| {
+        print("write {x:0>2};\t", .{dat});
+    } else {
+        print("read;\t", .{});
+    }
+    print("addr {x:0>4}\n", .{addr});
 
-    //const port = @intToEnum(Ports.PortNames, addr);
-    //switch (port) {
-    //    .ppu_status => {
-    //        log.debug("PPUSTATUS; Flagging vblank to be reset", .{});
-    //        self.vblank_clear = true;
-    //    },
-    //    else => print("PPU Port accessed: {}\n", .{port}),
-    //}
+    const port = @intToEnum(Ports.PortNames, addr);
+    switch (port) {
+        .ppu_status => {
+            log.debug("PPUSTATUS; Flagging vblank to be reset", .{});
+            if (self.ports.ppustatus.vblank) self.vblank_clear = true;
+        },
+        else => print("PPU Port accessed: {}\n", .{port}),
+    }
 }
