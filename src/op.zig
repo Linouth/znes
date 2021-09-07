@@ -142,7 +142,6 @@ const Operation = struct {
                 else => unreachable,
             } else Arg{ .none = {} };
 
-            //print("{}\n", .{arg});
             stdout.print("Bytes: 0x{x:0>2} 0x{x:0>2}\n", .{bytes[0], bytes[1]}) catch unreachable;
             stdout.print("Arg: {}\n", .{arg}) catch unreachable;
 
@@ -151,7 +150,13 @@ const Operation = struct {
 
             if (result) |res| {
                 stdout.print("Writing 0x{x:0>2} to address 0x{x:0>4}\n", .{res, addr}) catch unreachable;
-                try cpu.mmu.writeByte(addr, res);
+                if (self.addressing_mode == .accumulator) {
+                    // For some rare instructions that can store to either the
+                    // accumulator or memory.
+                    cpu.regs.a = res;
+                } else {
+                    try cpu.mmu.writeByte(addr, res);
+                }
             }
         } else {
             return OperationError.UnimplementedOperation;
@@ -312,6 +317,36 @@ const opcodes = comptime blk: {
             .{0xB4, .{ .addressing_mode = .zero_page_x,         .bytes = 2, .cycles = 4 }},
             .{0xAC, .{ .addressing_mode = .absolute,            .bytes = 3, .cycles = 4 }},
             .{0xBC, .{ .addressing_mode = .absolute_x,          .bytes = 3, .cycles = 4 }},
+        }},
+
+        // Logical Inclusive OR
+        .{ .mnemonic = "ORA", .instruction_type = .memory_read, .opcodes = .{
+            .{0x09, .{ .addressing_mode = .immediate,           .bytes = 2, .cycles = 2 }},
+            .{0x05, .{ .addressing_mode = .zero_page,           .bytes = 2, .cycles = 3 }},
+            .{0x15, .{ .addressing_mode = .zero_page_x,         .bytes = 2, .cycles = 4 }},
+            .{0x0D, .{ .addressing_mode = .absolute,            .bytes = 3, .cycles = 4 }},
+            .{0x1D, .{ .addressing_mode = .absolute_x,          .bytes = 3, .cycles = 4 }},
+            .{0x19, .{ .addressing_mode = .absolute_y,          .bytes = 3, .cycles = 4 }},
+            .{0x01, .{ .addressing_mode = .indexed_indirect,    .bytes = 2, .cycles = 6 }},
+            .{0x11, .{ .addressing_mode = .indirect_indexed,    .bytes = 2, .cycles = 5 }},
+        }},
+
+        // Rotate Left
+        .{ .mnemonic = "ROL", .instruction_type = .memory_read, .opcodes = .{
+            .{0x2A, .{ .addressing_mode = .accumulator,         .bytes = 1, .cycles = 2 }},
+            .{0x26, .{ .addressing_mode = .zero_page,           .bytes = 2, .cycles = 5 }},
+            .{0x36, .{ .addressing_mode = .zero_page_x,         .bytes = 2, .cycles = 6 }},
+            .{0x2E, .{ .addressing_mode = .absolute,            .bytes = 3, .cycles = 6 }},
+            .{0x3E, .{ .addressing_mode = .absolute_x,          .bytes = 3, .cycles = 7 }},
+        }},
+
+        // Rotate Left
+        .{ .mnemonic = "ROR", .instruction_type = .memory_read, .opcodes = .{
+            .{0x6A, .{ .addressing_mode = .accumulator,         .bytes = 1, .cycles = 2 }},
+            .{0x66, .{ .addressing_mode = .zero_page,           .bytes = 2, .cycles = 5 }},
+            .{0x76, .{ .addressing_mode = .zero_page_x,         .bytes = 2, .cycles = 6 }},
+            .{0x6E, .{ .addressing_mode = .absolute,            .bytes = 3, .cycles = 6 }},
+            .{0x7E, .{ .addressing_mode = .absolute_x,          .bytes = 3, .cycles = 7 }},
         }},
 
         // Return from Subroutine
@@ -555,6 +590,30 @@ fn handleLDY(cpu: *Cpu, arg: Arg) ?u8 {
     cpu.regs.y = arg.u8;
     cpu.regs.prev = cpu.regs.y;
     return null;
+}
+
+fn handleORA(cpu: *Cpu, arg: Arg) ?u8 {
+    cpu.regs.a = cpu.regs.a | arg.u8;
+    cpu.regs.prev = cpu.regs.a;
+    return null;
+}
+
+fn handleROL(cpu: *Cpu, arg: Arg) ?u8 {
+    const c = cpu.regs.c();
+    cpu.regs.p.flag.c = (arg.u8 & 0x80) > 0;
+
+    const res = (arg.u8 << 1) | @boolToInt(c);
+    cpu.regs.prev = res;
+    return res;
+}
+
+fn handleROR(cpu: *Cpu, arg: Arg) ?u8 {
+    const c = cpu.regs.c();
+    cpu.regs.p.flag.c = (arg.u8 & 0x01) > 0;
+
+    const res = (arg.u8 >> 1) | (@as(u8, @boolToInt(c)) << 7);
+    cpu.regs.prev = res;
+    return res;
 }
 
 // TODO: This should not receive an arg, it does now.
