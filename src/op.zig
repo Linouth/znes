@@ -99,7 +99,7 @@ const Operation = struct {
                 bytes[i] = cpu.readMemory();
             }
 
-            const addr: u16 = switch (self.addressing_mode) {
+            const addr: ?u16 = switch (self.addressing_mode) {
                 .zero_page => bytes[0],
                 .zero_page_x => bytes[0] +% cpu.regs.x,
                 .zero_page_y => bytes[0] +% cpu.regs.y,
@@ -125,7 +125,7 @@ const Operation = struct {
                     break :blk (@as(u16, msb) << 8 | lsb) + cpu.regs.y;
                 },
 
-                else => 0,
+                else => null,
             };
 
             var arg: Arg = if (self.instruction_type == .memory_read) switch (self.addressing_mode) {
@@ -133,11 +133,11 @@ const Operation = struct {
                 .accumulator => Arg{ .u8 = cpu.regs.a },
                 .immediate, .relative => Arg{ .u8 = bytes[0] },
 
-                else => Arg{ .u8 = try cpu.mmu.readByte(addr) },
+                else => Arg{ .u8 = try cpu.mmu.readByte(addr.?) },
             } else if (self.instruction_type == .jump) switch (self.addressing_mode) {
                 .relative => Arg{ .u8 = bytes[0] },
-                .absolute => Arg{ .u16 = addr },  // Tricky for combination, in mem read read this addr; in jump this is the arg. Rest is easy
-                .indirect => Arg{ .u8 = try cpu.mmu.readByte(addr) },
+                .absolute => Arg{ .u16 = addr.? },  // Tricky for combination, in mem read read this addr; in jump this is the arg. Rest is easy
+                .indirect => Arg{ .u8 = try cpu.mmu.readByte(addr.?) },
 
                 else => unreachable,
             } else Arg{ .none = {} };
@@ -149,13 +149,14 @@ const Operation = struct {
             const result = handler(cpu, arg);
 
             if (result) |res| {
-                stdout.print("Writing 0x{x:0>2} to address 0x{x:0>4}\n", .{res, addr}) catch unreachable;
                 if (self.addressing_mode == .accumulator) {
                     // For some rare instructions that can store to either the
                     // accumulator or memory.
+                    stdout.print("Writing 0x{x:0>2} to accumulator\n", .{res}) catch unreachable;
                     cpu.regs.a = res;
                 } else {
-                    try cpu.mmu.writeByte(addr, res);
+                    stdout.print("Writing 0x{x:0>2} to address 0x{x:0>4}\n", .{res, addr.?}) catch unreachable;
+                    try cpu.mmu.writeByte(addr.?, res);
                 }
             }
         } else {
