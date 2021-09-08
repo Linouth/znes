@@ -265,6 +265,18 @@ const opcodes = comptime blk: {
             .{0x88, .{ .addressing_mode = .implied,             .bytes = 1, .cycles = 2 }},
         }},
 
+        // Exclusive OR
+        .{ .mnemonic = "EOR", .instruction_type = .memory_read, .opcodes = .{
+            .{0x49, .{ .addressing_mode = .immediate,           .bytes = 2, .cycles = 2 }},
+            .{0x45, .{ .addressing_mode = .zero_page,           .bytes = 2, .cycles = 3 }},
+            .{0x55, .{ .addressing_mode = .zero_page_x,         .bytes = 2, .cycles = 4 }},
+            .{0x4D, .{ .addressing_mode = .absolute,            .bytes = 3, .cycles = 4 }},
+            .{0x5D, .{ .addressing_mode = .absolute_x,          .bytes = 3, .cycles = 4 }},
+            .{0x59, .{ .addressing_mode = .absolute_y,          .bytes = 3, .cycles = 4 }},
+            .{0x41, .{ .addressing_mode = .indexed_indirect,    .bytes = 2, .cycles = 6 }},
+            .{0x51, .{ .addressing_mode = .indirect_indexed,    .bytes = 2, .cycles = 5 }},
+        }},
+
         // Increment X Register
         .{ .mnemonic = "INC", .instruction_type = .memory_read, .opcodes = .{
             .{0xE6, .{ .addressing_mode = .zero_page,           .bytes = 2, .cycles = 5 }},
@@ -437,20 +449,30 @@ inline fn calcBranchOffset(pc: u16, offset: u8) u16 {
     };
 }
 
-fn handle(cpu: *Cpu, input: u8) Result {
-    const out = 0; // some calculation
-    return .{};
+inline fn bit(byte: u16, b: u4) bool {
+    return (byte & (@as(u16, 1) << b)) > 0;
 }
 
-// TODO: Some general way to handle the 'carry' flag.
-// TODO: Some general way to handle the 'overflow' flag (not just this inst.)
-//       For now, crash on overflow.
-//       Actually, the only instructions setting V are, ADC, SBC and BIT. Just
-//       calc in those instrucitons...
-//fn handleADC(cpu: *Cpu, arg: Arg) ?u8 {
-//    cpu.regs.a += @intCast(u8, args.arg0.?) + @boolToInt(cpu.regs.c());
-//    cpu.regs.prev = cpu.regs.a;
-//}
+// --- Handlers ---
+
+fn handleADC(cpu: *Cpu, arg: Arg) ?u8 {
+    const res: u12 = cpu.regs.a + arg.u8 + @boolToInt(cpu.regs.c());
+
+    // TODO: Some better way to set the oVerflow bit
+    const pos = (cpu.regs.a + arg.u8) >= 0;
+    const neg_bit = bit(res, 7);
+    if ((pos and neg_bit) or (!pos and !neg_bit)) {
+        cpu.regs.p.flag.v = true;
+    } else {
+        cpu.regs.p.flag.v = false;
+    }
+
+    cpu.regs.p.flag.c = (res & 0xf00) > 0;
+    cpu.regs.a = @truncate(u8, res);
+    cpu.regs.prev = cpu.regs.a;
+
+    return null;
+}
 
 fn handleAND(cpu: *Cpu, arg: Arg) ?u8 {
     cpu.regs.a &= arg.u8;
@@ -531,8 +553,9 @@ fn handleDEY(cpu: *Cpu, arg: Arg) ?u8 {
     return null;
 }
 
-fn handleSEI(cpu: *Cpu, input: Arg) ?u8 {
-    cpu.regs.p.flag.i = true;
+fn handleEOR(cpu: *Cpu, arg: Arg) ?u8 {
+    cpu.regs.a ^= arg.u8;
+    cpu.regs.prev = cpu.regs.a;
     return null;
 }
 
@@ -624,6 +647,11 @@ fn handleRTS(cpu: *Cpu, arg: Arg) ?u8 {
     cpu.mmu.readBytes(sp + 1, &bytes) catch unreachable;
     cpu.regs.sp += 2;
     cpu.regs.pc = (@as(u16, bytes[1]) << 8 | bytes[0]) + 1;
+    return null;
+}
+
+fn handleSEI(cpu: *Cpu, input: Arg) ?u8 {
+    cpu.regs.p.flag.i = true;
     return null;
 }
 

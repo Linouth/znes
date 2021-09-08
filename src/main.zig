@@ -200,16 +200,18 @@ pub fn main() anyerror!void {
 
     var cpu = Cpu.init(&mmu);
 
-    var tmp: usize = 0;
-    while (cpu.tick()) |_| : (tmp += 1) {
+    while (cpu.tick()) |_| {
 
-        ppu.tick();
+        var ii: usize = 0;
+        while (ii < 3) : (ii += 1) {
+            ppu.tick();
+        }
 
-        //if (tmp == 2048) break;
-
-        //if (cpu.regs.pc == 0xc313)
-        //if (cpu.regs.pc == 0xc321)
+        //if (cpu.regs.pc == 0xcbfd)
         //    break;
+
+        if (cpu.ticks > 31879)
+            break;
 
     } else |err| {
         switch (err) {

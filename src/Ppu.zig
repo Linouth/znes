@@ -70,7 +70,8 @@ pub fn reset(self: *Ppu) void {
 
 // TODO: Try to implement some callback/hook on mem read/write instead of polling
 pub fn tick(self: *Ppu) void {
-    if (self.ticks % 1024 == 0) {
+
+    if (self.ticks == 27384 or self.ticks == 57165) {
         print("vBlank set to true\n", .{});
         self.ports.ppustatus.vblank = true;
     }
@@ -100,6 +101,12 @@ pub fn memoryCallback(ctx: *c_void, map: Mmu.Map, addr: u16, data: ?u8) void {
         .ppu_status => {
             log.debug("PPUSTATUS; Flagging vblank to be reset", .{});
             if (self.ports.ppustatus.vblank) self.vblank_clear = true;
+        },
+        .oam_data => {
+            @panic("OAM Data accessed");
+        },
+        .oam_dma => {
+            @panic("OAM DMA accessed");
         },
         else => print("PPU Port accessed: {}\n", .{port}),
     }
