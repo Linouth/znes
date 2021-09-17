@@ -74,6 +74,8 @@ pub fn tick(self: *Ppu) void {
     if (self.ticks == 27384 or self.ticks == 57165) {
         print("vBlank set to true\n", .{});
         self.ports.ppustatus.vblank = true;
+    } else if (self.ticks > 60000 and self.ticks % 32 == 0) {
+        self.ports.ppustatus.vblank = true;
     }
 
     if (self.vblank_clear) {
@@ -98,6 +100,12 @@ pub fn memoryCallback(ctx: *c_void, map: Mmu.Map, addr: u16, data: ?u8) void {
 
     const port = @intToEnum(Ports.PortNames, addr);
     switch (port) {
+        .ppu_ctrl => {
+            switch (data.?) {
+                0, 0x10 => {},
+                else => @panic("PPU CTRL"),
+            }
+        },
         .ppu_status => {
             log.debug("PPUSTATUS; Flagging vblank to be reset", .{});
             if (self.ports.ppustatus.vblank) self.vblank_clear = true;
@@ -108,6 +116,16 @@ pub fn memoryCallback(ctx: *c_void, map: Mmu.Map, addr: u16, data: ?u8) void {
         .oam_dma => {
             @panic("OAM DMA accessed");
         },
-        else => print("PPU Port accessed: {}\n", .{port}),
+        .ppu_mask => {
+            print("PPU Mask accessed\n", .{});
+        },
+        .ppu_addr => {
+            // TODO: flag for next cycle to store this byte for a 16 bit addr
+            print("PPU ADDR written {}\n", .{data});
+        },
+        else => {
+            print("PPU Port accessed: {}\n", .{port});
+            @panic("");
+        },
     }
 }

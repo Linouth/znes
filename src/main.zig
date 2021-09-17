@@ -210,8 +210,8 @@ pub fn main() anyerror!void {
         //if (cpu.regs.pc == 0xcbfd)
         //    break;
 
-        if (cpu.ticks > 31879)
-            break;
+        //if (cpu.ticks > 31879)
+        //    break;
 
     } else |err| {
         switch (err) {

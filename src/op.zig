@@ -449,8 +449,8 @@ inline fn calcBranchOffset(pc: u16, offset: u8) u16 {
     };
 }
 
-inline fn bit(byte: u16, b: u4) bool {
-    return (byte & (@as(u16, 1) << b)) > 0;
+inline fn bit(dat: u16, b: u4) bool {
+    return (dat & (@as(u16, 1) << b)) > 0;
 }
 
 // --- Handlers ---
