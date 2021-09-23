@@ -24,7 +24,26 @@ const Sprite = packed struct {
 // The PPU has an internal data bus to the CPU. 
 const Ports = packed struct {
     ppuctrl: u8 = 0,
-    ppumask: u8 = 0,
+    ppumask: packed struct {
+        const ShowHide = enum(u1) {
+            hide,
+            show,
+        };
+
+        greyscale: enum(u1) {
+            normal,
+            greyscale,
+        } = .normal,
+        lm_background: ShowHide = .hide,
+        lm_sprites: ShowHide = .hide,
+        background: ShowHide = .hide,
+        sprites: ShowHide = .hide,
+        color_emphasize: packed struct {
+            red: bool = false,
+            green: bool = false,
+            blue: bool = false,
+        } = .{},
+    } = .{},
     ppustatus: packed struct {
         _: u5 = undefined,
         sprite_overflow: bool = true,
@@ -70,10 +89,10 @@ pub fn init() Ppu {
 
 pub fn reset(self: *Ppu) void {
     self.ports.ppuctrl = 0;
-    self.ports.ppumask = 0;
     self.ports.ppustatus = 0b10100000;
     self.ports.ppuscroll = 0;
     self.ports.ppudata = 0;
+    @panic("Unimplemented");
 }
 
 // TODO: Try to implement some callback/hook on mem read/write instead of polling
@@ -114,15 +133,13 @@ pub fn memoryCallback(ctx: *c_void, map: Mmu.Map, addr: u16, data: ?u8) void {
         },
         .ppu_mask => {
             print("PPU Mask accessed\n", .{});
-
-            switch (data.?) {
-                0 => {},
-                else => @panic("unimplemented"),
-            }
         },
         .ppu_status => {
             log.debug("PPUSTATUS; Flagging vblank to be reset", .{});
             if (self.ports.ppustatus.vblank) self.vblank_clear = true;
+        },
+        .oam_addr => {
+            print("PPU OAM_ADDR written to: 0x{x}\n", .{data.?});
         },
         .oam_data => {
             @panic("OAM Data accessed");
@@ -154,8 +171,10 @@ pub fn memoryCallback(ctx: *c_void, map: Mmu.Map, addr: u16, data: ?u8) void {
             self.addr_latch_write_toggle +%= 1;
         },
         .ppu_data => {
-            if (self.ports.ppustatus.vblank == false or (self.ports.ppumask & 0x18) > 0) {
-                print("vblank: {any}, mask: {any}\n", .{self.ports.ppustatus.vblank, self.ports.ppumask});
+            if (self.ports.ppustatus.vblank == false or
+                @bitCast(u8, self.ports.ppumask) & 0x18 > 0) {
+                print("vblank: {any}, mask: {any}\n",
+                    .{self.ports.ppustatus.vblank, self.ports.ppumask});
                 @panic("PPU: Trying to access VRAM while screen is still turned on");
             }
 
