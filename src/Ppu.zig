@@ -2,6 +2,8 @@ const std = @import("std");
 const print = std.debug.print;
 const log = std.log;
 
+const utils = @import("utils.zig");
+
 const Mmu = @import("Mmu.zig");
 const Ppu = @This();
 
@@ -49,6 +51,12 @@ const Ports = packed struct {
     };
 };
 
+vram: [0x4000]u8 = .{0xff} ** 0x4000,
+vram_addr: u16 = 0,
+
+addr_latch: u16 = 0,
+addr_latch_write_toggle: u1 = 0,
+
 ports: Ports,
 vblank_clear: bool = false,
 
@@ -81,6 +89,7 @@ pub fn tick(self: *Ppu) void {
     if (self.vblank_clear) {
         print("vBlankClear SET!\n", .{});
         self.ports.ppustatus.vblank = false;
+        self.addr_latch = 0;
         self.vblank_clear = false;
     }
 
@@ -101,9 +110,14 @@ pub fn memoryCallback(ctx: *c_void, map: Mmu.Map, addr: u16, data: ?u8) void {
     const port = @intToEnum(Ports.PortNames, addr);
     switch (port) {
         .ppu_ctrl => {
+            print("PPU Ctrl accessed\n", .{});
+        },
+        .ppu_mask => {
+            print("PPU Mask accessed\n", .{});
+
             switch (data.?) {
-                0, 0x10 => {},
-                else => @panic("PPU CTRL"),
+                0 => {},
+                else => @panic("unimplemented"),
             }
         },
         .ppu_status => {
@@ -113,17 +127,57 @@ pub fn memoryCallback(ctx: *c_void, map: Mmu.Map, addr: u16, data: ?u8) void {
         .oam_data => {
             @panic("OAM Data accessed");
         },
+        .ppu_scroll => {
+            const rot = self.addr_latch_write_toggle +% 1;
+            if (self.addr_latch & (@as(u16, 0xff) << (@as(u4, rot)*8)) != 0) {
+                std.debug.panic("PPU: Writing to PPUSCROLL without addr_latch cleared: {x}", .{self.addr_latch});
+            }
+
+            switch (self.addr_latch_write_toggle) {
+                0 => self.addr_latch = @as(u16, data.?) << 8,
+                1 => {
+                    self.addr_latch |= data.?;
+                    print("ppu_scroll done: 0x{x}\n", .{self.addr_latch});
+                },
+            }
+            self.addr_latch_write_toggle +%= 1;
+        },
+        .ppu_addr => {
+            switch (self.addr_latch_write_toggle) {
+                0 => self.addr_latch = @as(u16, data.?) << 8,
+                1 => {
+                    self.addr_latch |= data.?;
+                    self.vram_addr = self.addr_latch;
+                    print("vram_addr set: 0x{x}\n", .{self.vram_addr});
+                },
+            }
+            self.addr_latch_write_toggle +%= 1;
+        },
+        .ppu_data => {
+            if (self.ports.ppustatus.vblank == false or (self.ports.ppumask & 0x18) > 0) {
+                print("vblank: {any}, mask: {any}\n", .{self.ports.ppustatus.vblank, self.ports.ppumask});
+                @panic("PPU: Trying to access VRAM while screen is still turned on");
+            }
+
+            if (data) |dat| {
+                // Write
+                self.vram[self.vram_addr] = dat;
+
+                print("PPU: DATA write {x} to addr {x}\n", .{dat, self.vram_addr});
+                utils.dumpSurroundingHL(self.vram[0..], self.vram_addr);
+            } else {
+                // read
+                @panic("PPU: PPU_DATA read not implemented");
+            }
+
+            // (0: add 1, going across; 1: add 32, going down)
+            self.vram_addr += if (self.ports.ppuctrl & 4 == 0) @as(u16, 1) else 32;
+        },
         .oam_dma => {
             @panic("OAM DMA accessed");
         },
-        .ppu_mask => {
-            print("PPU Mask accessed\n", .{});
-        },
-        .ppu_addr => {
-            // TODO: flag for next cycle to store this byte for a 16 bit addr
-            print("PPU ADDR written {}\n", .{data});
-        },
         else => {
+            utils.memDump(self.vram[0..]);
             print("PPU Port accessed: {}\n", .{port});
             @panic("");
         },

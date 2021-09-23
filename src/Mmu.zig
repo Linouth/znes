@@ -36,11 +36,6 @@ const Mmu = @This();
 //   and one for writes. Or multiple entries per address. ( Map{ ..., .ac = .rw} )
 // - Callback / 'dirty-bit' set on reading/writing a specified address or region
 
-pub const Callback = struct {
-    ctx: *c_void,
-    func: fn(ctx: *c_void, map: Map, addr: u16, data: ?u8) void,
-};
-
 const MmuError = error {
     /// Trying to access memory that has not been mapped.
     UnmappedMemory,
@@ -53,6 +48,11 @@ const MmuError = error {
 
     /// Trying to write to memory that does not have the writable flag set.
     WritingROMemory
+};
+
+pub const Callback = struct {
+    ctx: *c_void,
+    func: fn(ctx: *c_void, map: Map, addr: u16, data: ?u8) void,
 };
 
 pub const Map = struct {
