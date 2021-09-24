@@ -7,6 +7,8 @@ const utils = @import("utils.zig");
 const Mmu = @import("Mmu.zig");
 const Ppu = @This();
 
+// TODOs:
+// - MMU for PPU. E.g. to handle mirrors (0x3000-0x3eff & 0x3f20-0x3fff)
 
 const Sprite = packed struct {
     pos_y: u8,
@@ -80,10 +82,18 @@ ports: Ports,
 vblank_clear: bool = false,
 
 ticks: u32 = 0,
+ppu_ready: bool = false,
 
-pub fn init() Ppu {
+frame_row: u9 = 0,
+frame_col: u9 = 0,
+frame_odd: bool = false,
+
+nmi: *bool,
+
+pub fn init(nmi: *bool) Ppu {
     return Ppu{
         .ports = .{},
+        .nmi = nmi,
     };
 }
 
@@ -95,14 +105,46 @@ pub fn reset(self: *Ppu) void {
     @panic("Unimplemented");
 }
 
-// TODO: Try to implement some callback/hook on mem read/write instead of polling
+// TODO: Right now each cycle of the PPU is emulated. Instead it might be a good
+// idea to do it scanline based instead. Rendering a line when it is ready.
 pub fn tick(self: *Ppu) void {
 
-    if (self.ticks == 27384 or self.ticks == 57165) {
-        print("vBlank set to true\n", .{});
-        self.ports.ppustatus.vblank = true;
-    } else if (self.ticks > 60000 and self.ticks % 32 == 0) {
-        self.ports.ppustatus.vblank = true;
+    // TODO: This is a mess. Wayyy too many branches
+    if (self.ppu_ready) {
+        if (self.frame_col == 0 and self.frame_odd and
+            (self.ports.ppumask.background == .show or
+                self.ports.ppumask.sprites == .show)) {
+            self.frame_col = 1;
+        }
+
+        if (self.frame_col == 1) {
+            if (self.frame_row == 241) {
+                print("VBLANK HIT IN FRAME\n", .{});
+                self.ports.ppustatus.vblank = true;
+
+                if (self.ports.ppuctrl & 0x80 > 0)
+                    self.nmi.* = true;
+            }
+            if (self.frame_row == 261) {
+                self.vblank_clear = true;
+                self.ports.ppustatus.sprite_0_hit = false;
+                self.ports.ppustatus.sprite_overflow = false;
+            }
+        }
+
+        if (self.frame_col >= 340) {
+            // Scanline finished, go to next line.
+            self.frame_col = 0;
+            self.frame_row += 1;
+        } else {
+            self.frame_col += 1;
+        }
+
+        if (self.frame_row > 261) {
+            // Frame finished.
+            self.frame_row = 0;
+            self.frame_odd = !self.frame_odd;
+        }
     }
 
     if (self.vblank_clear) {
@@ -110,6 +152,13 @@ pub fn tick(self: *Ppu) void {
         self.ports.ppustatus.vblank = false;
         self.addr_latch = 0;
         self.vblank_clear = false;
+    }
+
+    if (self.ticks == 27384) {
+        self.ports.ppustatus.vblank = true;
+    } else if (self.ticks == 57165) {
+        self.ports.ppustatus.vblank = true;
+        self.ppu_ready = true;
     }
 
     self.ticks += 1;
@@ -171,7 +220,7 @@ pub fn memoryCallback(ctx: *c_void, map: Mmu.Map, addr: u16, data: ?u8) void {
             self.addr_latch_write_toggle +%= 1;
         },
         .ppu_data => {
-            if (self.ports.ppustatus.vblank == false or
+            if (self.ports.ppustatus.vblank == false and
                 @bitCast(u8, self.ports.ppumask) & 0x18 > 0) {
                 print("vblank: {any}, mask: {any}\n",
                     .{self.ports.ppustatus.vblank, self.ports.ppumask});
@@ -195,10 +244,10 @@ pub fn memoryCallback(ctx: *c_void, map: Mmu.Map, addr: u16, data: ?u8) void {
         .oam_dma => {
             @panic("OAM DMA accessed");
         },
-        else => {
-            utils.memDump(self.vram[0..]);
-            print("PPU Port accessed: {}\n", .{port});
-            @panic("");
-        },
+        //else => {
+        //    utils.memDump(self.vram[0..]);
+        //    print("PPU Port accessed: {}\n", .{port});
+        //    @panic("");
+        //},
     }
 }

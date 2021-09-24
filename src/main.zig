@@ -79,9 +79,11 @@ pub const Cpu = struct {
 
     mmu: *Mmu,
 
+    nmi: *bool,
+
     ticks: u32 = 0,
 
-    pub fn init(mmu: *Mmu) Cpu {
+    pub fn init(mmu: *Mmu, nmi: *bool) Cpu {
 
         var cpu = Cpu {
             .regs = .{
@@ -94,6 +96,7 @@ pub const Cpu = struct {
                 .prev = undefined,
             },
             .mmu = mmu,
+            .nmi = nmi,
         };
         cpu.reset();
 
@@ -116,6 +119,17 @@ pub const Cpu = struct {
 
         stdout.print("\n", .{}) catch unreachable;
         self.regs.print();
+
+        if (self.nmi.*) {
+            // Non-maskable-interrupt triggered
+            // TODO: Push regs.p and return addr to stack
+
+            self.nmi.* = false;
+            var bytes: [2]u8 = undefined;
+            try self.mmu.readBytes(0xfffa, &bytes);
+            const addr = bytes[0] | (@as(u16, bytes[1]) << 8);
+            self.regs.pc = addr;
+        }
 
         const byte = self.readMemory();
 
@@ -165,9 +179,11 @@ pub fn main() anyerror!void {
 
     try mmu.load(cart);
 
+    var nmi: bool = false;
+
     // TODO: Temporary
     var ram = try allocator.alloc(u8, 0x800);
-    var ppu = Ppu.init();
+    var ppu = Ppu.init(&nmi);
     //var ppu_regs: [8]u8 = .{
     //    0,          // PPUCTRL
     //    0b00010001, // PPUMASK
@@ -198,7 +214,7 @@ pub fn main() anyerror!void {
     try mmu.mmap(.{ .slice = &apu_io_regs, .start = 0x4000, .end = 0x4018, .writable = true });
     mmu.sortMaps();
 
-    var cpu = Cpu.init(&mmu);
+    var cpu = Cpu.init(&mmu, &nmi);
 
     while (cpu.tick()) |_| {
 
@@ -210,8 +226,10 @@ pub fn main() anyerror!void {
         //if (cpu.regs.pc == 0xcbfd)
         //    break;
 
-        //if (cpu.ticks > 31879)
-        //    break;
+        if (cpu.ticks > 289917) {
+            print("PPUCTRL: {any}", .{ppu.ports.ppuctrl});
+            break;
+        }
 
     } else |err| {
         switch (err) {
