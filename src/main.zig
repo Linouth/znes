@@ -4,7 +4,8 @@ const log = std.log;
 const print = std.debug.print;
 const assert = std.debug.assert;
 
-const memDumpOffset = @import("utils.zig").memDumpOffset;
+const utils = @import("utils.zig");
+const memDumpOffset = utils.memDumpOffset;
 
 const Cart = @import("Cart.zig");
 const Mmu = @import("Mmu.zig");
@@ -150,6 +151,25 @@ pub const Cpu = struct {
 
         return byte;
     }
+
+    pub fn push(self: *Cpu, data: u8) void {
+        const sp = @as(u16, 0x0100) | self.regs.sp;
+        self.mmu.writeByte(sp, data) catch unreachable;
+        self.regs.sp -= 1;
+    }
+
+    pub fn pop(self: *Cpu) u8 {
+        self.regs.sp += 1;
+        const sp = @as(u16, 0x0100) | self.regs.sp;
+        const data = self.mmu.readByte(sp) catch unreachable;
+        return data;
+    }
+
+    pub fn stackPrint(self: Cpu) void {
+        var buf: [0x100]u8 = undefined;
+        self.mmu.readBytes(0x100, &buf) catch unreachable;
+        utils.memDumpOffset(&buf, 0x100);
+    }
 };
 
 pub fn main() anyerror!void {
@@ -225,6 +245,12 @@ pub fn main() anyerror!void {
 
         //if (cpu.regs.pc == 0xcbfd)
         //    break;
+
+        // The end of the NMI handler
+        if (cpu.regs.pc == 0xc190) {
+            print("NMI Handler finished(..?)\n", .{});
+            break;
+        }
 
         if (cpu.ticks > 289917) {
             print("PPUCTRL: {any}", .{ppu.ports.ppuctrl});

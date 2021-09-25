@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const print = std.debug.print;
+const utils = @import("utils.zig");
 
 const Cpu = @import("main.zig").Cpu;
 
@@ -344,6 +345,11 @@ const opcodes = comptime blk: {
             .{0x11, .{ .addressing_mode = .indirect_indexed,    .bytes = 2, .cycles = 5 }},
         }},
 
+        // Push Accumulator
+        .{ .mnemonic = "PHA", .instruction_type = .memory_write, .opcodes = .{
+            .{0x48, .{ .addressing_mode = .implied,             .bytes = 1, .cycles = 3 }},
+        }},
+
         // Rotate Left
         .{ .mnemonic = "ROL", .instruction_type = .memory_read, .opcodes = .{
             .{0x2A, .{ .addressing_mode = .accumulator,         .bytes = 1, .cycles = 2 }},
@@ -365,6 +371,11 @@ const opcodes = comptime blk: {
         // Return from Subroutine
         .{ .mnemonic = "RTS", .instruction_type = .jump, .opcodes = .{
             .{0x60, .{ .addressing_mode = .absolute,            .bytes = 1, .cycles = 6 }},
+        }},
+
+        // Set Interrupt Disable
+        .{ .mnemonic = "SEI", .instruction_type = .flags_set, .opcodes = .{
+            .{0x78, .{ .addressing_mode = .implied,             .bytes = 1, .cycles = 2 }},
         }},
 
         // Store Accumulator
@@ -392,9 +403,19 @@ const opcodes = comptime blk: {
             .{0x8C, .{ .addressing_mode = .absolute,            .bytes = 3, .cycles = 4 }},
         }},
 
-        // Set Interrupt Disable
-        .{ .mnemonic = "SEI", .instruction_type = .flags_set, .opcodes = .{
-            .{0x78, .{ .addressing_mode = .implied,             .bytes = 1, .cycles = 2 }},
+        // Transfer Accumulator to X
+        .{ .mnemonic = "TAX", .instruction_type = .register_modify, .opcodes = .{
+            .{0xAA, .{ .addressing_mode = .implied,             .bytes = 1, .cycles = 2 }},
+        }},
+
+        // Transfer Accumulator to Y
+        .{ .mnemonic = "TAY", .instruction_type = .register_modify, .opcodes = .{
+            .{0xA8, .{ .addressing_mode = .implied,             .bytes = 1, .cycles = 2 }},
+        }},
+
+        // Transfer X to Accumulator
+        .{ .mnemonic = "TXA", .instruction_type = .register_modify, .opcodes = .{
+            .{0x8A, .{ .addressing_mode = .implied,             .bytes = 1, .cycles = 2 }},
         }},
 
         // Transfer X to Stack Pointer
@@ -514,6 +535,11 @@ fn handleDLC(cpu: *Cpu, arg: Arg) ?u8 {
     return null;
 }
 
+fn handleCLD(cpu: *Cpu, arg: Arg) ?u8 {
+    cpu.regs.p.flag.d = false;
+    return null;
+}
+
 fn handleCMP(cpu: *Cpu, arg: Arg) ?u8 {
     const val = cpu.regs.a -% arg.u8;
     cpu.regs.p.flag.c = val < 128;  // Y >= M
@@ -586,14 +612,11 @@ fn handleJMP(cpu: *Cpu, arg: Arg) ?u8 {
     return null;
 }
 
-// TODO: Implement a proper stack... This is a mess...
 fn handleJSR(cpu: *Cpu, arg: Arg) ?u8 {
     const pc = cpu.regs.pc - 1;
-    const sp = @as(u16, 0x0100) | cpu.regs.sp;
-    cpu.mmu.writeByte(sp, @truncate(u8, pc >> 8)) catch unreachable;
-    cpu.regs.sp -= 1;
-    cpu.mmu.writeByte(sp - 1, @truncate(u8, pc)) catch unreachable;
-    cpu.regs.sp -= 1;
+    cpu.push(@truncate(u8, pc >> 8));
+    cpu.push(@truncate(u8, pc));
+
     cpu.regs.pc = arg.u16;
     return null;
 }
@@ -622,6 +645,11 @@ fn handleORA(cpu: *Cpu, arg: Arg) ?u8 {
     return null;
 }
 
+fn handlePHA(cpu: *Cpu, arg: Arg) ?u8 {
+    cpu.push(cpu.regs.a);
+    return null;
+}
+
 fn handleROL(cpu: *Cpu, arg: Arg) ?u8 {
     const c = cpu.regs.c();
     cpu.regs.p.flag.c = (arg.u8 & 0x80) > 0;
@@ -642,10 +670,7 @@ fn handleROR(cpu: *Cpu, arg: Arg) ?u8 {
 
 // TODO: This should not receive an arg, it does now.
 fn handleRTS(cpu: *Cpu, arg: Arg) ?u8 {
-    const sp = @as(u16, 0x0100) | cpu.regs.sp;
-    var bytes: [2]u8 = undefined;
-    cpu.mmu.readBytes(sp + 1, &bytes) catch unreachable;
-    cpu.regs.sp += 2;
+    const bytes: [2]u8 = .{ cpu.pop(), cpu.pop() };
     cpu.regs.pc = (@as(u16, bytes[1]) << 8 | bytes[0]) + 1;
     return null;
 }
@@ -667,8 +692,21 @@ fn handleSTY(cpu: *Cpu, arg: Arg) ?u8 {
     return cpu.regs.y;
 }
 
-fn handleCLD(cpu: *Cpu, arg: Arg) ?u8 {
-    cpu.regs.p.flag.d = false;
+fn handleTAX(cpu: *Cpu, arg: Arg) ?u8 {
+    cpu.regs.x = cpu.regs.a;
+    cpu.regs.prev = cpu.regs.x;
+    return null;
+}
+
+fn handleTAY(cpu: *Cpu, arg: Arg) ?u8 {
+    cpu.regs.y = cpu.regs.a;
+    cpu.regs.prev = cpu.regs.y;
+    return null;
+}
+
+fn handleTXA(cpu: *Cpu, arg: Arg) ?u8 {
+    cpu.regs.a = cpu.regs.x;
+    cpu.regs.prev = cpu.regs.x;
     return null;
 }
 
