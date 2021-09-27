@@ -12,6 +12,9 @@ const OperationError = error {
 
     /// Tried to handle an unknown opcode.
     UnknownOpcode,
+
+    /// Trying to write to memory, but address is set to null.
+    NullAddress,
 };
 
 const ArgType = enum {
@@ -148,7 +151,6 @@ const Operation = struct {
             stdout.print("Bytes: 0x{x:0>2} 0x{x:0>2}\n", .{bytes[0], bytes[1]}) catch unreachable;
             stdout.print("Arg: {}\n", .{arg}) catch unreachable;
 
-            // TODO: Try inline this with @call
             const result = handler(cpu, arg);
 
             if (result) |res| {
@@ -162,7 +164,7 @@ const Operation = struct {
                         stdout.print("Writing 0x{x:0>2} to address 0x{x:0>4}\n", .{res, addrx}) catch unreachable;
                         try cpu.mmu.writeByte(addrx, res);
                     } else {
-                        @panic("Operation: handler() returned value, but address is null. Instruction is (probably) not a memory_write instruction.");
+                        return OperationError.NullAddress;
                     }
                 }
             }
@@ -336,7 +338,7 @@ const opcodes = comptime blk: {
             .{0x51, .{ .addressing_mode = .indirect_indexed,    .bytes = 2, .cycles = 5 }},
         }},
 
-        // Increment X Register
+        // Increment Memory
         .{ .mnemonic = "INC", .instruction_type = .memory_read, .opcodes = .{
             .{0xE6, .{ .addressing_mode = .zero_page,           .bytes = 2, .cycles = 5 }},
             .{0xF6, .{ .addressing_mode = .zero_page_x,         .bytes = 2, .cycles = 6 }},
