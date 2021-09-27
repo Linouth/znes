@@ -156,8 +156,12 @@ const Operation = struct {
                     stdout.print("Writing 0x{x:0>2} to accumulator\n", .{res}) catch unreachable;
                     cpu.regs.a = res;
                 } else {
-                    stdout.print("Writing 0x{x:0>2} to address 0x{x:0>4}\n", .{res, addr.?}) catch unreachable;
-                    try cpu.mmu.writeByte(addr.?, res);
+                    if (addr) |addrx| {
+                        stdout.print("Writing 0x{x:0>2} to address 0x{x:0>4}\n", .{res, addrx}) catch unreachable;
+                        try cpu.mmu.writeByte(addrx, res);
+                    } else {
+                        @panic("Operation: handler() returned value, but address is null. Instruction is (probably) not a memory_write instruction.");
+                    }
                 }
             }
         } else {
@@ -197,9 +201,34 @@ const opcodes = comptime blk: {
             .{0x31, .{ .addressing_mode = .indirect_indexed,    .bytes = 2, .cycles = 5 }},
         }},
 
+        // Arithmetic Shift Left
+        .{ .mnemonic = "ASL", .instruction_type = .memory_read, .opcodes = .{
+            .{0x0A, .{ .addressing_mode = .accumulator,         .bytes = 1, .cycles = 2 }},
+            .{0x06, .{ .addressing_mode = .zero_page,           .bytes = 2, .cycles = 5 }},
+            .{0x16, .{ .addressing_mode = .zero_page_x,         .bytes = 2, .cycles = 6 }},
+            .{0x0E, .{ .addressing_mode = .absolute,            .bytes = 3, .cycles = 6 }},
+            .{0x1E, .{ .addressing_mode = .absolute_x,          .bytes = 3, .cycles = 7 }},
+        }},
+
+        // Branch if Carry Clear
+        .{ .mnemonic = "BCC", .instruction_type = .jump, .opcodes = .{
+            .{0x90, .{ .addressing_mode = .relative,            .bytes = 2, .cycles = 2 }},
+        }},
+
+        // Branch if Carry Set
+        .{ .mnemonic = "BCS", .instruction_type = .jump, .opcodes = .{
+            .{0xB0, .{ .addressing_mode = .relative,            .bytes = 2, .cycles = 2 }},
+        }},
+
         // Branch if Equal
         .{ .mnemonic = "BEQ", .instruction_type = .jump, .opcodes = .{
             .{0xF0, .{ .addressing_mode = .relative,            .bytes = 2, .cycles = 2 }},
+        }},
+
+        // Bit Test
+        .{ .mnemonic = "BIT", .instruction_type = .memory_read, .opcodes = .{
+            .{0x24, .{ .addressing_mode = .zero_page,           .bytes = 2, .cycles = 3 }},
+            .{0x2C, .{ .addressing_mode = .absolute,            .bytes = 3, .cycles = 4 }},
         }},
 
         // Branch if Minus
@@ -217,9 +246,36 @@ const opcodes = comptime blk: {
             .{0x10, .{ .addressing_mode = .relative,            .bytes = 2, .cycles = 2 }},
         }},
 
+        //BRK
+
+        // Branch if Overflow Clear
+        .{ .mnemonic = "BVC", .instruction_type = .jump, .opcodes = .{
+            .{0x50, .{ .addressing_mode = .relative,            .bytes = 2, .cycles = 2 }},
+        }},
+
+        // Branch if Overflow Set
+        .{ .mnemonic = "BVS", .instruction_type = .jump, .opcodes = .{
+            .{0x70, .{ .addressing_mode = .relative,            .bytes = 2, .cycles = 2 }},
+        }},
+
+        // Clear Carry Flag
+        .{ .mnemonic = "CLC", .instruction_type = .flags_set, .opcodes = .{
+            .{0x18, .{ .addressing_mode = .implied,             .bytes = 1, .cycles = 2 }},
+        }},
+
         // Clear Decimal Mode
         .{ .mnemonic = "CLD", .instruction_type = .flags_set, .opcodes = .{
             .{0xD8, .{ .addressing_mode = .implied,             .bytes = 1, .cycles = 2 }},
+        }},
+
+        // Clear Interrupt Disable
+        .{ .mnemonic = "CLI", .instruction_type = .flags_set, .opcodes = .{
+            .{0x58, .{ .addressing_mode = .implied,             .bytes = 1, .cycles = 2 }},
+        }},
+
+        // Clear Overflow Flag
+        .{ .mnemonic = "CLV", .instruction_type = .flags_set, .opcodes = .{
+            .{0xB8, .{ .addressing_mode = .implied,             .bytes = 1, .cycles = 2 }},
         }},
 
         // Compare
@@ -333,6 +389,9 @@ const opcodes = comptime blk: {
             .{0xBC, .{ .addressing_mode = .absolute_x,          .bytes = 3, .cycles = 4 }},
         }},
 
+        //LSR
+        //NOP
+
         // Logical Inclusive OR
         .{ .mnemonic = "ORA", .instruction_type = .memory_read, .opcodes = .{
             .{0x09, .{ .addressing_mode = .immediate,           .bytes = 2, .cycles = 2 }},
@@ -349,6 +408,10 @@ const opcodes = comptime blk: {
         .{ .mnemonic = "PHA", .instruction_type = .memory_write, .opcodes = .{
             .{0x48, .{ .addressing_mode = .implied,             .bytes = 1, .cycles = 3 }},
         }},
+
+        //PHP
+        //PLA
+        //PLP
 
         // Rotate Left
         .{ .mnemonic = "ROL", .instruction_type = .memory_read, .opcodes = .{
@@ -368,10 +431,16 @@ const opcodes = comptime blk: {
             .{0x7E, .{ .addressing_mode = .absolute_x,          .bytes = 3, .cycles = 7 }},
         }},
 
+        //RTI
+
         // Return from Subroutine
         .{ .mnemonic = "RTS", .instruction_type = .jump, .opcodes = .{
             .{0x60, .{ .addressing_mode = .absolute,            .bytes = 1, .cycles = 6 }},
         }},
+
+        //SBC
+        //SEC
+        //SED
 
         // Set Interrupt Disable
         .{ .mnemonic = "SEI", .instruction_type = .flags_set, .opcodes = .{
@@ -412,6 +481,8 @@ const opcodes = comptime blk: {
         .{ .mnemonic = "TAY", .instruction_type = .register_modify, .opcodes = .{
             .{0xA8, .{ .addressing_mode = .implied,             .bytes = 1, .cycles = 2 }},
         }},
+
+        //TSX
 
         // Transfer X to Accumulator
         .{ .mnemonic = "TXA", .instruction_type = .register_modify, .opcodes = .{
@@ -501,13 +572,39 @@ fn handleAND(cpu: *Cpu, arg: Arg) ?u8 {
     return null;
 }
 
+fn handleASL(cpu: *Cpu, arg: Arg) ?u8 {
+    cpu.regs.p.flag.c = arg.u8 & 0x80 > 0;
+    return arg.u8 *% 2;
+}
+
 // TODO: For all branches, set the proper cycle (+1 on succeed, +2 on new page)
+fn handleBCC(cpu: *Cpu, arg: Arg) ?u8 {
+    if (!cpu.regs.c()) {
+        cpu.regs.pc = calcBranchOffset(cpu.regs.pc, arg.u8);
+    }
+    return null;
+}
+
+fn handleBCS(cpu: *Cpu, arg: Arg) ?u8 {
+    if (cpu.regs.c()) {
+        cpu.regs.pc = calcBranchOffset(cpu.regs.pc, arg.u8);
+    }
+    return null;
+}
+
 fn handleBEQ(cpu: *Cpu, arg: Arg) ?u8 {
     if (cpu.regs.z()) {
         cpu.regs.pc = calcBranchOffset(cpu.regs.pc, arg.u8);
     }
     return null;
 }
+
+// TODO: Small problem; the current way of handling the n flag does not allow
+// for us to set it manually here. It is derived from regs.prev, but that should
+// be set to A & M for the zero flag.
+//fn handleBIT(cpu: *Cpu, arg: Arg) ?u8 {
+//    
+//}
 
 fn handleBMI(cpu: *Cpu, arg: Arg) ?u8 {
     if (cpu.regs.n()) {
@@ -530,13 +627,37 @@ fn handleBPL(cpu: *Cpu, arg: Arg) ?u8 {
     return null;
 }
 
-fn handleDLC(cpu: *Cpu, arg: Arg) ?u8 {
-    cpu.regs.p.flag.d = 0;
+fn handleBVC(cpu: *Cpu, arg: Arg) ?u8 {
+    if (!cpu.regs.v()) {
+        cpu.regs.pc = calcBranchOffset(cpu.regs.pc, arg.u8);
+    }
+    return null;
+}
+
+fn handleBVS(cpu: *Cpu, arg: Arg) ?u8 {
+    if (cpu.regs.v()) {
+        cpu.regs.pc = calcBranchOffset(cpu.regs.pc, arg.u8);
+    }
+    return null;
+}
+
+fn handleCLC(cpu: *Cpu, arg: Arg) ?u8 {
+    cpu.regs.p.flag.c = false;
     return null;
 }
 
 fn handleCLD(cpu: *Cpu, arg: Arg) ?u8 {
     cpu.regs.p.flag.d = false;
+    return null;
+}
+
+fn handleCLI(cpu: *Cpu, arg: Arg) ?u8 {
+    cpu.regs.p.flag.i = false;
+    return null;
+}
+
+fn handleCLV(cpu: *Cpu, arg: Arg) ?u8 {
+    cpu.regs.p.flag.v = false;
     return null;
 }
 
