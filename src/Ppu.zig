@@ -144,7 +144,12 @@ pub fn tick(self: *Ppu) void {
             // Frame finished.
             self.frame_row = 0;
             self.frame_odd = !self.frame_odd;
+
+            if (self.ports.ppumask.background == .show or self.ports.ppumask.sprites == .show)
+                @panic("Frame finished");
         }
+
+        print("row: {}, col: {}\n", .{ self.frame_row, self.frame_col });
     }
 
     if (self.vblank_clear) {
@@ -154,9 +159,9 @@ pub fn tick(self: *Ppu) void {
         self.vblank_clear = false;
     }
 
-    if (self.ticks == 27384) {
+    if (self.ticks == 27384*3) {
         self.ports.ppustatus.vblank = true;
-    } else if (self.ticks == 57165) {
+    } else if (self.ticks == 57165*3) {
         self.ports.ppustatus.vblank = true;
         self.ppu_ready = true;
     }

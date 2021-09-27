@@ -3,7 +3,7 @@ const std = @import("std");
 const print = std.debug.print;
 const utils = @import("utils.zig");
 
-const Cpu = @import("main.zig").Cpu;
+const Cpu = @import("Cpu.zig");
 
 
 const OperationError = error {
