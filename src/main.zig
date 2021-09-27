@@ -24,7 +24,7 @@ pub const Cpu = struct {
         y: u8,  // Y index
 
         p: extern union {
-            all: u8,
+            raw: u8,
             flag: packed struct {
                 c: bool,  // Carry flag
                 z: bool,  // Zero flag
@@ -91,7 +91,7 @@ pub const Cpu = struct {
                 .a = 0,
                 .x = 0,
                 .y = 0,
-                .p = .{ .all = 0x34 },
+                .p = .{ .raw = 0x34 },
                 .sp = 0xfd,
                 .pc = undefined,
                 .prev = undefined,
@@ -108,7 +108,7 @@ pub const Cpu = struct {
         var pc_bytes: [2]u8 = undefined;
         self.mmu.readBytes(0xfffc, &pc_bytes) catch unreachable;
 
-        self.regs.p = .{ .all = self.regs.p.all | 0x04 };
+        self.regs.p = .{ .raw = self.regs.p.raw | 0x04 };
         self.regs.sp = self.regs.sp - 3;
         self.regs.pc = @as(u16, pc_bytes[1]) << 8 | pc_bytes[0];
 
@@ -123,7 +123,11 @@ pub const Cpu = struct {
 
         if (self.nmi.*) {
             // Non-maskable-interrupt triggered
-            // TODO: Push regs.p and return addr to stack
+
+            // Push return address and CPU status register to the stack
+            self.push(@truncate(u8, self.regs.pc >> 8));
+            self.push(@truncate(u8, self.regs.pc));
+            self.push(self.regs.p.raw);
 
             self.nmi.* = false;
             var bytes: [2]u8 = undefined;
@@ -247,10 +251,10 @@ pub fn main() anyerror!void {
         //    break;
 
         // The end of the NMI handler
-        if (cpu.regs.pc == 0xc190) {
-            print("NMI Handler finished(..?)\n", .{});
-            break;
-        }
+        //if (cpu.regs.pc == 0xc190) {
+        //    print("NMI Handler finished(..?)\n", .{});
+        //    break;
+        //}
 
         if (cpu.ticks > 289917) {
             print("PPUCTRL: {any}", .{ppu.ports.ppuctrl});

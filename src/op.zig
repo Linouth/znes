@@ -140,6 +140,8 @@ const Operation = struct {
                 .absolute => Arg{ .u16 = addr.? },  // Tricky for combination, in mem read read this addr; in jump this is the arg. Rest is easy
                 .indirect => Arg{ .u8 = try cpu.mmu.readByte(addr.?) },
 
+                .implied => Arg{ .none = {} },
+
                 else => unreachable,
             } else Arg{ .none = {} };
 
@@ -378,6 +380,10 @@ const opcodes = comptime blk: {
         // Load X Register
         .{ .mnemonic = "LDX", .instruction_type = .memory_read, .opcodes = .{
             .{0xA2, .{ .addressing_mode = .immediate,           .bytes = 2, .cycles = 2 }},
+            .{0xA6, .{ .addressing_mode = .zero_page,           .bytes = 2, .cycles = 3 }},
+            .{0xB6, .{ .addressing_mode = .zero_page_x,         .bytes = 2, .cycles = 4 }},
+            .{0xAE, .{ .addressing_mode = .absolute,            .bytes = 3, .cycles = 4 }},
+            .{0xBE, .{ .addressing_mode = .absolute_x,          .bytes = 3, .cycles = 4 }},
         }},
 
         // Load Y Register
@@ -389,7 +395,14 @@ const opcodes = comptime blk: {
             .{0xBC, .{ .addressing_mode = .absolute_x,          .bytes = 3, .cycles = 4 }},
         }},
 
-        //LSR
+        // Logical Shift Right
+        .{ .mnemonic = "LSR", .instruction_type = .memory_read, .opcodes = .{
+            .{0x4A, .{ .addressing_mode = .accumulator,         .bytes = 1, .cycles = 2 }},
+            .{0x46, .{ .addressing_mode = .zero_page,           .bytes = 2, .cycles = 5 }},
+            .{0x56, .{ .addressing_mode = .zero_page_x,         .bytes = 2, .cycles = 6 }},
+            .{0x4E, .{ .addressing_mode = .absolute,            .bytes = 3, .cycles = 6 }},
+            .{0x5E, .{ .addressing_mode = .absolute_x,          .bytes = 3, .cycles = 7 }},
+        }},
         //NOP
 
         // Logical Inclusive OR
@@ -409,9 +422,20 @@ const opcodes = comptime blk: {
             .{0x48, .{ .addressing_mode = .implied,             .bytes = 1, .cycles = 3 }},
         }},
 
-        //PHP
-        //PLA
-        //PLP
+        // Push Processor Status
+        .{ .mnemonic = "PHP", .instruction_type = .memory_write, .opcodes = .{
+            .{0x08, .{ .addressing_mode = .implied,             .bytes = 1, .cycles = 3 }},
+        }},
+
+        // Pull Accumulator
+        .{ .mnemonic = "PLA", .instruction_type = .memory_read, .opcodes = .{
+            .{0x68, .{ .addressing_mode = .implied,             .bytes = 1, .cycles = 4 }},
+        }},
+
+        // Pull Processor Status
+        .{ .mnemonic = "PLP", .instruction_type = .memory_read, .opcodes = .{
+            .{0x28, .{ .addressing_mode = .implied,             .bytes = 1, .cycles = 4 }},
+        }},
 
         // Rotate Left
         .{ .mnemonic = "ROL", .instruction_type = .memory_read, .opcodes = .{
@@ -431,16 +455,37 @@ const opcodes = comptime blk: {
             .{0x7E, .{ .addressing_mode = .absolute_x,          .bytes = 3, .cycles = 7 }},
         }},
 
-        //RTI
+        // Return from Interrupt
+        .{ .mnemonic = "RTI", .instruction_type = .jump, .opcodes = .{
+            .{0x40, .{ .addressing_mode = .implied,             .bytes = 1, .cycles = 6 }},
+        }},
 
         // Return from Subroutine
         .{ .mnemonic = "RTS", .instruction_type = .jump, .opcodes = .{
-            .{0x60, .{ .addressing_mode = .absolute,            .bytes = 1, .cycles = 6 }},
+            .{0x60, .{ .addressing_mode = .implied,             .bytes = 1, .cycles = 6 }},
         }},
 
-        //SBC
-        //SEC
-        //SED
+        // Subtract with Carry (with Borrow)
+        .{ .mnemonic = "SBC", .instruction_type = .memory_read, .opcodes = .{
+            .{0xE9, .{ .addressing_mode = .immediate,           .bytes = 2, .cycles = 2 }},
+            .{0xE5, .{ .addressing_mode = .zero_page,           .bytes = 2, .cycles = 3 }},
+            .{0xF5, .{ .addressing_mode = .zero_page_x,         .bytes = 2, .cycles = 4 }},
+            .{0xED, .{ .addressing_mode = .absolute,            .bytes = 3, .cycles = 4 }},
+            .{0xFD, .{ .addressing_mode = .absolute_x,          .bytes = 3, .cycles = 4 }},
+            .{0xF9, .{ .addressing_mode = .absolute_y,          .bytes = 3, .cycles = 4 }},
+            .{0xE1, .{ .addressing_mode = .indexed_indirect,    .bytes = 2, .cycles = 6 }},
+            .{0xF1, .{ .addressing_mode = .indirect_indexed,    .bytes = 2, .cycles = 5 }},
+        }},
+
+        // Set Carry Flag
+        .{ .mnemonic = "SEC", .instruction_type = .flags_set, .opcodes = .{
+            .{0x38, .{ .addressing_mode = .implied,             .bytes = 1, .cycles = 2 }},
+        }},
+
+        // Set Decimal Flag
+        .{ .mnemonic = "SED", .instruction_type = .flags_set, .opcodes = .{
+            .{0xF8, .{ .addressing_mode = .implied,             .bytes = 1, .cycles = 2 }},
+        }},
 
         // Set Interrupt Disable
         .{ .mnemonic = "SEI", .instruction_type = .flags_set, .opcodes = .{
@@ -482,7 +527,10 @@ const opcodes = comptime blk: {
             .{0xA8, .{ .addressing_mode = .implied,             .bytes = 1, .cycles = 2 }},
         }},
 
-        //TSX
+        // Transfer Stack Pointer to X
+        .{ .mnemonic = "TSX", .instruction_type = .register_modify, .opcodes = .{
+            .{0xBA, .{ .addressing_mode = .implied,             .bytes = 1, .cycles = 2 }},
+        }},
 
         // Transfer X to Accumulator
         .{ .mnemonic = "TXA", .instruction_type = .register_modify, .opcodes = .{
@@ -760,6 +808,13 @@ fn handleLDY(cpu: *Cpu, arg: Arg) ?u8 {
     return null;
 }
 
+fn handleLSR(cpu: *Cpu, arg: Arg) ?u8 {
+    cpu.regs.p.flag.c = arg.u8 & 1 > 0;
+    const res = arg.u8 / 2;
+    cpu.regs.prev = res;
+    return res;
+}
+
 fn handleORA(cpu: *Cpu, arg: Arg) ?u8 {
     cpu.regs.a = cpu.regs.a | arg.u8;
     cpu.regs.prev = cpu.regs.a;
@@ -768,6 +823,22 @@ fn handleORA(cpu: *Cpu, arg: Arg) ?u8 {
 
 fn handlePHA(cpu: *Cpu, arg: Arg) ?u8 {
     cpu.push(cpu.regs.a);
+    return null;
+}
+
+fn handlePHP(cpu: *Cpu, arg: Arg) ?u8 {
+    cpu.push(cpu.regs.p.raw);
+    return null;
+}
+
+fn handlePLA(cpu: *Cpu, arg: Arg) ?u8 {
+    cpu.regs.a = cpu.pop();
+    cpu.regs.prev = cpu.regs.a;
+    return null;
+}
+
+fn handlePLP(cpu: *Cpu, arg: Arg) ?u8 {
+    cpu.regs.p.raw = cpu.pop();
     return null;
 }
 
@@ -789,10 +860,51 @@ fn handleROR(cpu: *Cpu, arg: Arg) ?u8 {
     return res;
 }
 
+fn handleRTI(cpu: *Cpu, arg: Arg) ?u8 {
+    // Pull status register from the stack (ignoring the Break flag)
+    cpu.regs.p.raw = cpu.pop() & (~@as(u8, 0b00010000));
+
+    const bytes: [2]u8 = .{ cpu.pop(), cpu.pop() };
+    cpu.regs.pc = @as(u16, bytes[1]) << 8 | bytes[0];
+
+    return null;
+}
+
 // TODO: This should not receive an arg, it does now.
 fn handleRTS(cpu: *Cpu, arg: Arg) ?u8 {
     const bytes: [2]u8 = .{ cpu.pop(), cpu.pop() };
     cpu.regs.pc = (@as(u16, bytes[1]) << 8 | bytes[0]) + 1;
+
+    return null;
+}
+
+// TODO: Try to use the same 'circuit' for both ADC and SBC
+fn handleSBC(cpu: *Cpu, arg: Arg) ?u8 {
+    const res: u8 = cpu.regs.a -% arg.u8 -% @boolToInt(!cpu.regs.c());
+
+    if (res > cpu.regs.a) {
+        // Overflow occured
+        cpu.regs.p.flag.c = false;
+    }
+
+    if ((cpu.regs.a & 0x80 > 0) and (res & 0x80 == 0)) {
+        // Going from negative to positive with a subtract is invalid
+        cpu.regs.p.flag.v = true;
+    }
+
+    cpu.regs.a = res;
+    cpu.regs.prev = cpu.regs.a;
+
+    return null;
+}
+
+fn handleSEC(cpu: *Cpu, input: Arg) ?u8 {
+    cpu.regs.p.flag.c = true;
+    return null;
+}
+
+fn handleSED(cpu: *Cpu, input: Arg) ?u8 {
+    cpu.regs.p.flag.i = true;
     return null;
 }
 
@@ -822,6 +934,12 @@ fn handleTAX(cpu: *Cpu, arg: Arg) ?u8 {
 fn handleTAY(cpu: *Cpu, arg: Arg) ?u8 {
     cpu.regs.y = cpu.regs.a;
     cpu.regs.prev = cpu.regs.y;
+    return null;
+}
+
+fn handleTSX(cpu: *Cpu, arg: Arg) ?u8 {
+    cpu.regs.x = cpu.regs.sp;
+    cpu.regs.prev = cpu.regs.sp;
     return null;
 }
 
