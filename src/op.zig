@@ -29,6 +29,8 @@ const Arg = union(ArgType) {
     u16: u16,
 };
 
+const HandlerFn = fn (cpu: *Cpu, input: Arg) callconv(.Inline) ?u8;
+
 // TODO: This name can be better. An Operation instance is for **all**
 // occurences of that opcode. OperationHandler or OperationType would be a
 // better fit maybe.
@@ -78,7 +80,7 @@ const Operation = struct {
     cycles: u3,
 
     /// Handler function
-    handler: comptime ?fn (cpu: *Cpu, input: Arg) ?u8 = null,
+    handler: comptime ?HandlerFn = null,
 
     /// Evaluate this operation. This will modify the Cpu object, an possibly
     /// access the Mmu.
@@ -553,7 +555,7 @@ const opcodes = comptime blk: {
     for (instruction_definitions) |instruction| {
         // Retrieve this instruction's handle function
         const handle_fn = "handle" ++ instruction.mnemonic;
-        const field: ?@TypeOf(handleSEI) = if (@hasDecl(@This(), handle_fn)) @field(@This(), handle_fn) else null;
+        const field: ?HandlerFn = if (@hasDecl(@This(), handle_fn)) @field(@This(), handle_fn) else null;
 
         // Go over each opcode belonging to this instruction
         for (instruction.opcodes) |opcode| {
@@ -582,13 +584,11 @@ pub fn decode(byte: u8) !Operation {
 }
 
 inline fn calcBranchOffset(pc: u16, offset: u8) u16 {
-    // There HAS to be a better way to do this... (u8 + i8)
-    return if (offset & 0x80 > 0) {
-        // Negative number
-        return pc - -%@intCast(u8, offset);
-    } else {
-        return pc + @truncate(u7, offset);
-    };
+    // Cast offset into a signed int, then sign-extend to 16 bits.
+    const off = @as(i16, @bitCast(i8, offset));
+
+    // Convert sign-extended signed back into unsigned for addition.
+    return pc +% @bitCast(u16, off);
 }
 
 inline fn bit(dat: u16, b: u4) bool {
@@ -597,7 +597,7 @@ inline fn bit(dat: u16, b: u4) bool {
 
 // --- Handlers ---
 
-fn handleADC(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleADC(cpu: *Cpu, arg: Arg) ?u8 {
     const res: u12 = cpu.regs.a + arg.u8 + @boolToInt(cpu.regs.c());
 
     // TODO: Some better way to set the oVerflow bit
@@ -616,33 +616,33 @@ fn handleADC(cpu: *Cpu, arg: Arg) ?u8 {
     return null;
 }
 
-fn handleAND(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleAND(cpu: *Cpu, arg: Arg) ?u8 {
     cpu.regs.a &= arg.u8;
     cpu.regs.prev = cpu.regs.a;
     return null;
 }
 
-fn handleASL(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleASL(cpu: *Cpu, arg: Arg) ?u8 {
     cpu.regs.p.flag.c = arg.u8 & 0x80 > 0;
     return arg.u8 *% 2;
 }
 
 // TODO: For all branches, set the proper cycle (+1 on succeed, +2 on new page)
-fn handleBCC(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleBCC(cpu: *Cpu, arg: Arg) ?u8 {
     if (!cpu.regs.c()) {
         cpu.regs.pc = calcBranchOffset(cpu.regs.pc, arg.u8);
     }
     return null;
 }
 
-fn handleBCS(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleBCS(cpu: *Cpu, arg: Arg) ?u8 {
     if (cpu.regs.c()) {
         cpu.regs.pc = calcBranchOffset(cpu.regs.pc, arg.u8);
     }
     return null;
 }
 
-fn handleBEQ(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleBEQ(cpu: *Cpu, arg: Arg) ?u8 {
     if (cpu.regs.z()) {
         cpu.regs.pc = calcBranchOffset(cpu.regs.pc, arg.u8);
     }
@@ -656,125 +656,125 @@ fn handleBEQ(cpu: *Cpu, arg: Arg) ?u8 {
 //    
 //}
 
-fn handleBMI(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleBMI(cpu: *Cpu, arg: Arg) ?u8 {
     if (cpu.regs.n()) {
         cpu.regs.pc = calcBranchOffset(cpu.regs.pc, arg.u8);
     }
     return null;
 }
 
-fn handleBNE(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleBNE(cpu: *Cpu, arg: Arg) ?u8 {
     if (!cpu.regs.z()) {
         cpu.regs.pc = calcBranchOffset(cpu.regs.pc, arg.u8);
     }
     return null;
 }
 
-fn handleBPL(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleBPL(cpu: *Cpu, arg: Arg) ?u8 {
     if (!cpu.regs.n()) {
         cpu.regs.pc = calcBranchOffset(cpu.regs.pc, arg.u8);
     }
     return null;
 }
 
-fn handleBVC(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleBVC(cpu: *Cpu, arg: Arg) ?u8 {
     if (!cpu.regs.v()) {
         cpu.regs.pc = calcBranchOffset(cpu.regs.pc, arg.u8);
     }
     return null;
 }
 
-fn handleBVS(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleBVS(cpu: *Cpu, arg: Arg) ?u8 {
     if (cpu.regs.v()) {
         cpu.regs.pc = calcBranchOffset(cpu.regs.pc, arg.u8);
     }
     return null;
 }
 
-fn handleCLC(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleCLC(cpu: *Cpu, arg: Arg) ?u8 {
     cpu.regs.p.flag.c = false;
     return null;
 }
 
-fn handleCLD(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleCLD(cpu: *Cpu, arg: Arg) ?u8 {
     cpu.regs.p.flag.d = false;
     return null;
 }
 
-fn handleCLI(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleCLI(cpu: *Cpu, arg: Arg) ?u8 {
     cpu.regs.p.flag.i = false;
     return null;
 }
 
-fn handleCLV(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleCLV(cpu: *Cpu, arg: Arg) ?u8 {
     cpu.regs.p.flag.v = false;
     return null;
 }
 
-fn handleCMP(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleCMP(cpu: *Cpu, arg: Arg) ?u8 {
     const val = cpu.regs.a -% arg.u8;
     cpu.regs.p.flag.c = val < 128;  // Y >= M
     cpu.regs.prev = val;
     return null;
 }
 
-fn handleCPX(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleCPX(cpu: *Cpu, arg: Arg) ?u8 {
     const val = cpu.regs.x -% arg.u8;
     cpu.regs.p.flag.c = val < 128;  // Y >= M
     cpu.regs.prev = val;
     return null;
 }
 
-fn handleCPY(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleCPY(cpu: *Cpu, arg: Arg) ?u8 {
     const val = cpu.regs.y -% arg.u8;
     cpu.regs.p.flag.c = val < 128;  // Y >= M
     cpu.regs.prev = val;
     return null;
 }
 
-fn handleDEC(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleDEC(cpu: *Cpu, arg: Arg) ?u8 {
     const val = arg.u8 -% 1;
     cpu.regs.prev = val;
     return val;
 }
 
-fn handleDEX(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleDEX(cpu: *Cpu, arg: Arg) ?u8 {
     cpu.regs.x -%= 1;
     cpu.regs.prev = cpu.regs.x;
     return null;
 }
 
-fn handleDEY(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleDEY(cpu: *Cpu, arg: Arg) ?u8 {
     cpu.regs.y -%= 1;
     cpu.regs.prev = cpu.regs.y;
     return null;
 }
 
-fn handleEOR(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleEOR(cpu: *Cpu, arg: Arg) ?u8 {
     cpu.regs.a ^= arg.u8;
     cpu.regs.prev = cpu.regs.a;
     return null;
 }
 
-fn handleINC(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleINC(cpu: *Cpu, arg: Arg) ?u8 {
     const val = arg.u8 +% 1;
     cpu.regs.prev = val;
     return val;
 }
 
-fn handleINX(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleINX(cpu: *Cpu, arg: Arg) ?u8 {
     cpu.regs.x +%= 1;
     cpu.regs.prev = cpu.regs.x;
     return null;
 }
 
-fn handleINY(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleINY(cpu: *Cpu, arg: Arg) ?u8 {
     cpu.regs.y +%= 1;
     cpu.regs.prev = cpu.regs.y;
     return null;
 }
 
-fn handleJMP(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleJMP(cpu: *Cpu, arg: Arg) ?u8 {
     cpu.regs.pc = arg.u16;
 
     // NOTE: "An original 6502 does not correctly fetch the target address if
@@ -783,7 +783,7 @@ fn handleJMP(cpu: *Cpu, arg: Arg) ?u8 {
     return null;
 }
 
-fn handleJSR(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleJSR(cpu: *Cpu, arg: Arg) ?u8 {
     const pc = cpu.regs.pc - 1;
     cpu.push(@truncate(u8, pc >> 8));
     cpu.push(@truncate(u8, pc));
@@ -792,59 +792,59 @@ fn handleJSR(cpu: *Cpu, arg: Arg) ?u8 {
     return null;
 }
 
-fn handleLDA(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleLDA(cpu: *Cpu, arg: Arg) ?u8 {
     cpu.regs.a = arg.u8;
     cpu.regs.prev = arg.u8;
     return null;
 }
 
-fn handleLDX(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleLDX(cpu: *Cpu, arg: Arg) ?u8 {
     cpu.regs.x = arg.u8;
     cpu.regs.prev = cpu.regs.x;
     return null;
 }
 
-fn handleLDY(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleLDY(cpu: *Cpu, arg: Arg) ?u8 {
     cpu.regs.y = arg.u8;
     cpu.regs.prev = cpu.regs.y;
     return null;
 }
 
-fn handleLSR(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleLSR(cpu: *Cpu, arg: Arg) ?u8 {
     cpu.regs.p.flag.c = arg.u8 & 1 > 0;
     const res = arg.u8 / 2;
     cpu.regs.prev = res;
     return res;
 }
 
-fn handleORA(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleORA(cpu: *Cpu, arg: Arg) ?u8 {
     cpu.regs.a = cpu.regs.a | arg.u8;
     cpu.regs.prev = cpu.regs.a;
     return null;
 }
 
-fn handlePHA(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handlePHA(cpu: *Cpu, arg: Arg) ?u8 {
     cpu.push(cpu.regs.a);
     return null;
 }
 
-fn handlePHP(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handlePHP(cpu: *Cpu, arg: Arg) ?u8 {
     cpu.push(cpu.regs.p.raw);
     return null;
 }
 
-fn handlePLA(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handlePLA(cpu: *Cpu, arg: Arg) ?u8 {
     cpu.regs.a = cpu.pop();
     cpu.regs.prev = cpu.regs.a;
     return null;
 }
 
-fn handlePLP(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handlePLP(cpu: *Cpu, arg: Arg) ?u8 {
     cpu.regs.p.raw = cpu.pop();
     return null;
 }
 
-fn handleROL(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleROL(cpu: *Cpu, arg: Arg) ?u8 {
     const c = cpu.regs.c();
     cpu.regs.p.flag.c = (arg.u8 & 0x80) > 0;
 
@@ -853,7 +853,7 @@ fn handleROL(cpu: *Cpu, arg: Arg) ?u8 {
     return res;
 }
 
-fn handleROR(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleROR(cpu: *Cpu, arg: Arg) ?u8 {
     const c = cpu.regs.c();
     cpu.regs.p.flag.c = (arg.u8 & 0x01) > 0;
 
@@ -862,7 +862,7 @@ fn handleROR(cpu: *Cpu, arg: Arg) ?u8 {
     return res;
 }
 
-fn handleRTI(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleRTI(cpu: *Cpu, arg: Arg) ?u8 {
     // Pull status register from the stack (ignoring the Break flag)
     cpu.regs.p.raw = cpu.pop() & (~@as(u8, 0b00010000));
 
@@ -873,7 +873,7 @@ fn handleRTI(cpu: *Cpu, arg: Arg) ?u8 {
 }
 
 // TODO: This should not receive an arg, it does now.
-fn handleRTS(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleRTS(cpu: *Cpu, arg: Arg) ?u8 {
     const bytes: [2]u8 = .{ cpu.pop(), cpu.pop() };
     cpu.regs.pc = (@as(u16, bytes[1]) << 8 | bytes[0]) + 1;
 
@@ -881,7 +881,7 @@ fn handleRTS(cpu: *Cpu, arg: Arg) ?u8 {
 }
 
 // TODO: Try to use the same 'circuit' for both ADC and SBC
-fn handleSBC(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleSBC(cpu: *Cpu, arg: Arg) ?u8 {
     const res: u8 = cpu.regs.a -% arg.u8 -% @boolToInt(!cpu.regs.c());
 
     if (res > cpu.regs.a) {
@@ -900,63 +900,63 @@ fn handleSBC(cpu: *Cpu, arg: Arg) ?u8 {
     return null;
 }
 
-fn handleSEC(cpu: *Cpu, input: Arg) ?u8 {
+inline fn handleSEC(cpu: *Cpu, input: Arg) ?u8 {
     cpu.regs.p.flag.c = true;
     return null;
 }
 
-fn handleSED(cpu: *Cpu, input: Arg) ?u8 {
+inline fn handleSED(cpu: *Cpu, input: Arg) ?u8 {
     cpu.regs.p.flag.i = true;
     return null;
 }
 
-fn handleSEI(cpu: *Cpu, input: Arg) ?u8 {
+inline fn handleSEI(cpu: *Cpu, input: Arg) ?u8 {
     cpu.regs.p.flag.i = true;
     return null;
 }
 
-fn handleSTA(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleSTA(cpu: *Cpu, arg: Arg) ?u8 {
     return cpu.regs.a;
 }
 
-fn handleSTX(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleSTX(cpu: *Cpu, arg: Arg) ?u8 {
     return cpu.regs.x;
 }
 
-fn handleSTY(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleSTY(cpu: *Cpu, arg: Arg) ?u8 {
     return cpu.regs.y;
 }
 
-fn handleTAX(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleTAX(cpu: *Cpu, arg: Arg) ?u8 {
     cpu.regs.x = cpu.regs.a;
     cpu.regs.prev = cpu.regs.x;
     return null;
 }
 
-fn handleTAY(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleTAY(cpu: *Cpu, arg: Arg) ?u8 {
     cpu.regs.y = cpu.regs.a;
     cpu.regs.prev = cpu.regs.y;
     return null;
 }
 
-fn handleTSX(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleTSX(cpu: *Cpu, arg: Arg) ?u8 {
     cpu.regs.x = cpu.regs.sp;
     cpu.regs.prev = cpu.regs.sp;
     return null;
 }
 
-fn handleTXA(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleTXA(cpu: *Cpu, arg: Arg) ?u8 {
     cpu.regs.a = cpu.regs.x;
     cpu.regs.prev = cpu.regs.x;
     return null;
 }
 
-fn handleTXS(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleTXS(cpu: *Cpu, arg: Arg) ?u8 {
     cpu.regs.sp = cpu.regs.x;
     return null;
 }
 
-fn handleTYA(cpu: *Cpu, arg: Arg) ?u8 {
+inline fn handleTYA(cpu: *Cpu, arg: Arg) ?u8 {
     cpu.regs.a = cpu.regs.y;
     cpu.regs.prev = cpu.regs.y;
     return null;
