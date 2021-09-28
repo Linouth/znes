@@ -5,14 +5,23 @@ const print = std.debug.print;
 const assert = std.debug.assert;
 
 const utils = @import("utils.zig");
+const graphics = @import("ui.zig");
 
 const Cart = @import("Cart.zig");
 const Mmu = @import("Mmu.zig");
 const Ppu = @import("Ppu.zig");
 const Cpu = @import("Cpu.zig");
 
+const c = graphics.c;
+
+const FONT = "/usr/share/fonts/TTF/FiraCode-Regular.ttf";
+const FRAME_SIZE = .{ .w = 256, .h = 240 };
 
 pub fn main() anyerror!void {
+    // Initialize UI related things, and open new window
+    const ui = try graphics.UI.init(FRAME_SIZE.w, FRAME_SIZE.h, FONT);
+
+    // Initialize Emulation related things
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = &arena.allocator;
@@ -66,34 +75,63 @@ pub fn main() anyerror!void {
 
     var cpu = Cpu.init(&mmu, &nmi);
 
-    while (cpu.tick()) |_| {
 
-        var ii: usize = 0;
-        while (ii < 3) : (ii += 1) {
-            ppu.tick();
-        }
+    var prev_time = c.SDL_GetTicks();
 
-        // The end of the NMI handler
-        //if (cpu.regs.pc == 0xc190) {
-        //    print("NMI Handler finished(..?)\n", .{});
-        //    break;
-        //}
-    } else |err| {
-        switch (err) {
-            error.UnknownOpcode => {
-                log.err("Unknown opcode encountered: ${x:0>2}",
-                    .{try cpu.mmu.readByte(cpu.regs.pc - 1)});
+    // Main event loop
+    outer: while (true) {
+        var event: c.SDL_Event = undefined;
+        while (c.SDL_PollEvent(&event) == 1) switch (event.type) {
+            c.SDL_QUIT => break :outer,
+
+            c.SDL_KEYDOWN => {
+                const key = event.key.keysym.sym;
+                switch (key) {
+                    c.SDLK_q => break :outer,
+
+                    else => log.info("Unhandled key: {s}", .{c.SDL_GetKeyName(key)}),
+                }
             },
 
-            error.UnimplementedOperation => {
-                log.err("Unimplemented operation encountered: ${x:0>2}",
-                    .{try cpu.mmu.readByte(cpu.regs.pc - 1)});
-            },
+            else => {},
+        };
 
-            else => log.err("CPU ran into an unknown error: {}", .{err}),
+        { // Emulation related calls
+            cpu.tick() catch |err| {
+                switch (err) {
+                    error.UnknownOpcode => {
+                        log.err("Unknown opcode encountered: ${x:0>2}",
+                            .{try cpu.mmu.readByte(cpu.regs.pc - 1)});
+                    },
+
+                    error.UnimplementedOperation => {
+                        log.err("Unimplemented operation encountered: ${x:0>2}",
+                            .{try cpu.mmu.readByte(cpu.regs.pc - 1)});
+                    },
+
+                    else => log.err("CPU ran into an unknown error: {}", .{err}),
+                }
+
+                cpu.regs.print();
+            };
+
+            var ii: usize = 0;
+            while (ii < 3) : (ii += 1) {
+                ppu.tick();
+            }
         }
 
-        cpu.regs.print();
+        // Rendering related calls
+        if (prev_time < (@as(i64, c.SDL_GetTicks()) - 1000/60) ) {
+            ui.setColor(.{ .r = 0, .g = 0, .b = 0, .a = 255 });
+            ui.renderClear();
+
+            ui.renderText("This is a test string.", .{ .x = 0, .y = 0 }, null);
+
+            ui.present();
+
+            prev_time = c.SDL_GetTicks();
+        }
     }
 
     var buf: [0x210]u8 = undefined;

@@ -146,10 +146,10 @@ pub fn tick(self: *Ppu) void {
             self.frame_odd = !self.frame_odd;
 
             if (self.ports.ppumask.background == .show or self.ports.ppumask.sprites == .show)
-                @panic("Frame finished");
+                print("Frame should be drawn!\n", .{});
         }
 
-        print("row: {}, col: {}\n", .{ self.frame_row, self.frame_col });
+        //#print("row: {}, col: {}\n", .{ self.frame_row, self.frame_col });
     }
 
     if (self.vblank_clear) {
@@ -172,13 +172,13 @@ pub fn tick(self: *Ppu) void {
 pub fn memoryCallback(ctx: *c_void, map: Mmu.Map, addr: u16, data: ?u8) void {
     const self = @ptrCast(*Ppu, @alignCast(@alignOf(Ppu), ctx));
 
-    print("PPU Memory access; ", .{});
-    if (data) |dat| {
-        print("write {x:0>2};\t", .{dat});
-    } else {
-        print("read;\t", .{});
-    }
-    print("addr {x:0>4}\n", .{addr});
+    //#print("PPU Memory access; ", .{});
+    //#if (data) |dat| {
+    //#    print("write {x:0>2};\t", .{dat});
+    //#} else {
+    //#    print("read;\t", .{});
+    //#}
+    //#print("addr {x:0>4}\n", .{addr});
 
     const port = @intToEnum(Ports.PortNames, addr);
     switch (port) {
@@ -189,7 +189,7 @@ pub fn memoryCallback(ctx: *c_void, map: Mmu.Map, addr: u16, data: ?u8) void {
             print("PPU Mask accessed\n", .{});
         },
         .ppu_status => {
-            log.debug("PPUSTATUS; Flagging vblank to be reset", .{});
+            //#log.debug("PPUSTATUS; Flagging vblank to be reset", .{});
             if (self.ports.ppustatus.vblank) self.vblank_clear = true;
         },
         .oam_addr => {
@@ -236,8 +236,8 @@ pub fn memoryCallback(ctx: *c_void, map: Mmu.Map, addr: u16, data: ?u8) void {
                 // Write
                 self.vram[self.vram_addr] = dat;
 
-                print("PPU: DATA write {x} to addr {x}\n", .{dat, self.vram_addr});
-                utils.dumpSurroundingHL(self.vram[0..], self.vram_addr);
+                //#print("PPU: DATA write {x} to addr {x}\n", .{dat, self.vram_addr});
+                //#utils.dumpSurroundingHL(self.vram[0..], self.vram_addr);
             } else {
                 // read
                 @panic("PPU: PPU_DATA read not implemented");

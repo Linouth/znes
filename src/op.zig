@@ -148,8 +148,8 @@ const Operation = struct {
                 else => unreachable,
             } else Arg{ .none = {} };
 
-            stdout.print("Bytes: 0x{x:0>2} 0x{x:0>2}\n", .{bytes[0], bytes[1]}) catch unreachable;
-            stdout.print("Arg: {}\n", .{arg}) catch unreachable;
+            //#stdout.print("Bytes: 0x{x:0>2} 0x{x:0>2}\n", .{bytes[0], bytes[1]}) catch unreachable;
+            //#stdout.print("Arg: {}\n", .{arg}) catch unreachable;
 
             const result = handler(cpu, arg);
 
@@ -157,11 +157,11 @@ const Operation = struct {
                 if (self.addressing_mode == .accumulator) {
                     // For some rare instructions that can store to either the
                     // accumulator or memory.
-                    stdout.print("Writing 0x{x:0>2} to accumulator\n", .{res}) catch unreachable;
+                    //#stdout.print("Writing 0x{x:0>2} to accumulator\n", .{res}) catch unreachable;
                     cpu.regs.a = res;
                 } else {
                     if (addr) |addrx| {
-                        stdout.print("Writing 0x{x:0>2} to address 0x{x:0>4}\n", .{res, addrx}) catch unreachable;
+                        //#stdout.print("Writing 0x{x:0>2} to address 0x{x:0>4}\n", .{res, addrx}) catch unreachable;
                         try cpu.mmu.writeByte(addrx, res);
                     } else {
                         return OperationError.NullAddress;

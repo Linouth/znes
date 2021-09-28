@@ -109,8 +109,8 @@ fn reset(self: *Cpu) void {
 pub fn tick(self: *Cpu) !void {
     const stdout = std.io.getStdOut().writer();
 
-    stdout.print("\n", .{}) catch unreachable;
-    self.regs.print();
+    //#stdout.print("\n", .{}) catch unreachable;
+    //#self.regs.print();
 
     if (self.nmi.*) {
         // Non-maskable-interrupt triggered
@@ -131,9 +131,9 @@ pub fn tick(self: *Cpu) !void {
 
     var opcode = try op.decode(byte);
 
-    stdout.print("Operation: ${x:0>2}: {s}; instruction_type: {}, addr_mode: {}, bytes: {}, cycles: {}\n",
-        .{ byte, opcode.mnemonic, opcode.instruction_type, opcode.addressing_mode, opcode.bytes, opcode.cycles }) catch unreachable;
-    stdout.print("Ticks: {}\n", .{self.ticks}) catch unreachable;
+    //#stdout.print("Operation: ${x:0>2}: {s}; instruction_type: {}, addr_mode: {}, bytes: {}, cycles: {}\n",
+    //#    .{ byte, opcode.mnemonic, opcode.instruction_type, opcode.addressing_mode, opcode.bytes, opcode.cycles }) catch unreachable;
+    //#stdout.print("Ticks: {}\n", .{self.ticks}) catch unreachable;
 
     try opcode.eval(self);
 
