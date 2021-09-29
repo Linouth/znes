@@ -71,11 +71,11 @@ regs: struct {
 
 mmu: *Mmu,
 
-nmi: *bool,
+nmi: bool = false,
 
 ticks: u32 = 0,
 
-pub fn init(mmu: *Mmu, nmi: *bool) Cpu {
+pub fn init(mmu: *Mmu) !Cpu {
 
     var cpu = Cpu {
         .regs = .{
@@ -88,7 +88,6 @@ pub fn init(mmu: *Mmu, nmi: *bool) Cpu {
             .prev = undefined,
         },
         .mmu = mmu,
-        .nmi = nmi,
     };
     cpu.reset();
 
@@ -112,7 +111,7 @@ pub fn tick(self: *Cpu) !void {
     //#stdout.print("\n", .{}) catch unreachable;
     //#self.regs.print();
 
-    if (self.nmi.*) {
+    if (self.nmi) {
         // Non-maskable-interrupt triggered
 
         // Push return address and CPU status register to the stack
@@ -120,7 +119,7 @@ pub fn tick(self: *Cpu) !void {
         self.push(@truncate(u8, self.regs.pc));
         self.push(self.regs.p.raw);
 
-        self.nmi.* = false;
+        self.nmi = false;
         var bytes: [2]u8 = undefined;
         try self.mmu.readBytes(0xfffa, &bytes);
         const addr = bytes[0] | (@as(u16, bytes[1]) << 8);

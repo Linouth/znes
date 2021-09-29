@@ -117,6 +117,21 @@ pub fn tick(self: *Ppu) void {
             self.frame_col = 1;
         }
 
+        switch (self.frame_col) {
+            // Fetch and render
+            1...256 => {},
+
+            257 => {},
+
+            // Idle
+            258...320 => {},
+
+            // Prefetch
+            321...340 => {},
+
+            else => {},
+        }
+
         if (self.frame_col == 1) {
             if (self.frame_row == 241) {
                 print("VBLANK HIT IN FRAME\n", .{});
