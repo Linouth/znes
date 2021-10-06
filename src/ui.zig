@@ -11,14 +11,22 @@ const SDLError = error{
     TTFError
 };
 
-const Pos = struct {
+pub const Pos = struct {
     x: u32,
     y: u32,
+};
+
+pub const Rgb = extern struct {
+    r: u8,
+    g: u8,
+    b: u8,
 };
 
 pub const UI = struct {
     window: *c.SDL_Window,
     renderer: *c.SDL_Renderer,
+
+    frame_texture: *c.SDL_Texture,
 
     text_gen: TextGen,
 
@@ -44,6 +52,13 @@ pub const UI = struct {
         const renderer = c.SDL_CreateRenderer(window, -1, c.SDL_RENDERER_ACCELERATED)
             orelse return sdlError("SDL_CreateRenderer failed");
 
+        const frame_texture = c.SDL_CreateTexture(
+            renderer,
+            c.SDL_PIXELFORMAT_RGB24,
+            c.SDL_TEXTUREACCESS_STREAMING,
+            Frame.WIDTH, Frame.HEIGHT
+        ) orelse return sdlError("SDL_CreateTexture failed");
+
         const font = c.TTF_OpenFont(font_path, 12)
             orelse return ttfError("TTF_OpenFont");
 
@@ -52,6 +67,7 @@ pub const UI = struct {
         return UI {
             .window = window,
             .renderer = renderer,
+            .frame_texture = frame_texture,
             .text_gen = text_generator,
         };
     }
@@ -61,6 +77,7 @@ pub const UI = struct {
         defer c.TTF_Quit();
         defer c.SDL_DestroyWindow(self.window);
         defer c.SDL_DestroyRenderer(self.renderer);
+        defer c.SDL_DestroyTexture(self.frame_texture);
         defer c.SDL_CloseFont(self.text_gen.font);
     }
 
@@ -84,6 +101,14 @@ pub const UI = struct {
 
         _ = c.SDL_RenderCopy(self.renderer, text.texture, null, &text.rect);
         defer c.SDL_DestroyTexture(text.texture);
+    }
+
+    pub fn renderFrame(self: UI, frame: *const Frame) !void {
+        //const res = c.SDL_UpdateTexture(self.frame_texture, &Frame.RECT, &frame.data, Frame.WIDTH * 3);
+        const res = c.SDL_UpdateTexture(self.frame_texture, &Frame.RECT, &frame.data, Frame.WIDTH * 3);
+        if (res < 0) return sdlError("SDL_UpdateTexture failed.");
+
+        _ = c.SDL_RenderCopy(self.renderer, self.frame_texture, null, &Frame.RECT);
     }
 };
 
@@ -148,3 +173,35 @@ fn ttfError(prefix: []const u8) SDLError {
     log.err("{s}: {s}", .{prefix, err});
     return SDLError.TTFError;
 }
+
+pub const Frame = struct {
+    pub const WIDTH = 256;
+    pub const HEIGHT = 240;
+
+    pub const RECT = c.SDL_Rect {
+        .x = 0,
+        .y = 0,
+        .w = WIDTH,
+        .h = HEIGHT,
+    };
+
+    data: [WIDTH * HEIGHT * 3]u8,
+
+    pub fn init() Frame {
+        return Frame {
+            .data = .{ 0 } ** (WIDTH * HEIGHT * 3),
+        };
+    }
+
+    pub fn setPixel(self: *Frame, x: u16, y: u16, rgb: Rgb) void {
+        std.debug.assert(x < 256);
+        std.debug.assert(y < 240);
+
+        const addr = (y * WIDTH + x) * 3;
+        std.debug.assert(addr + 2 < self.data.len);
+
+        self.data[addr] = rgb.r;
+        self.data[addr + 1] = rgb.g;
+        self.data[addr + 2] = rgb.b;
+    }
+};

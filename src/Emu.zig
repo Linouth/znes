@@ -2,6 +2,7 @@ const std = @import("std");
 const print = std.debug.print;
 
 const utils = @import("utils.zig");
+const graphics = @import("ui.zig");
 
 const Cart = @import("Cart.zig");
 const Mmu = @import("Mmu.zig");
@@ -46,7 +47,7 @@ pub fn init(self: *Emu, rom_filename: []const u8) !*Emu {
 
     self.cpu = try Cpu.init(&self.mmu);
 
-    self.ppu = Ppu.init(&self.cpu.nmi);
+    self.ppu = Ppu.init(&self.cpu.nmi, &self.cart);
 
     // TODO: Temporary. THE RAM IS NEVER FREED!
     var ram = try self.allocator.alloc(u8, 0x800);
@@ -76,4 +77,35 @@ pub fn init(self: *Emu, rom_filename: []const u8) !*Emu {
 pub fn deinit(self: *Emu) void {
     defer self.cart.deinit();
     defer self.mmu.deinit();
+}
+
+pub fn showTile(self: Emu, bank: u1, tile_nr: u16) graphics.Frame {
+    var frame = graphics.Frame.init();
+
+    const tile_addr = @as(u16, bank)*0x1000 + tile_nr * 16;
+    const tile = self.cart.chr_data[tile_addr..(tile_addr + 16)];
+
+    var y: u8 = 0;
+    while (y < 8) : (y += 1) {
+        var lower = tile[y];
+        var upper = tile[y+8];
+
+        var x: u8 = 0;
+        while (x < 8) : (x += 1) {
+            const value: u2 = @truncate(u1, lower) | @as(u2, @truncate(u1, upper)) << 1;
+            upper >>= 1;
+            lower >>= 1;
+
+            const color: graphics.Rgb = switch (value) {
+                0 => .{ .r = 0x00, .g = 0x01, .b = 0x54 },
+                1 => .{ .r = 0x8e, .g = 0x5b, .b = 0xff },
+                2 => .{ .r = 0xdc, .g = 0x88, .b = 0x17 },
+                3 => .{ .r = 0x53, .g = 0xca, .b = 0x28 },
+            };
+
+            frame.setPixel(7-x, y, color);
+        }
+    }
+
+    return frame;
 }

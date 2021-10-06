@@ -4,6 +4,7 @@ const log = std.log;
 
 const utils = @import("utils.zig");
 
+const Cart = @import("Cart.zig");
 const Mmu = @import("Mmu.zig");
 const Ppu = @This();
 
@@ -25,7 +26,18 @@ const Sprite = packed struct {
 
 // The PPU has an internal data bus to the CPU. 
 const Ports = packed struct {
-    ppuctrl: u8 = 0,
+    ppuctrl: packed struct {
+        nametable_base: u2 = 0,
+        addr_inc: enum(u1) {
+            add_1,
+            add_32
+        } = .add_1,
+        sprite_addr: bool = false,
+        background_addr: bool = false,
+        sprite_size: bool = false,
+        ppu_master: bool = false,
+        generate_nmi: bool = false,
+    } = .{},
     ppumask: packed struct {
         const ShowHide = enum(u1) {
             hide,
@@ -90,15 +102,19 @@ frame_odd: bool = false,
 
 nmi: *bool,
 
-pub fn init(nmi: *bool) Ppu {
-    return Ppu{
+pub fn init(nmi: *bool, cart: *Cart) Ppu {
+    var ppu = Ppu{
         .ports = .{},
         .nmi = nmi,
     };
+
+    std.mem.copy(u8, ppu.vram[0..], cart.chr_data);
+
+    return ppu;
 }
 
 pub fn reset(self: *Ppu) void {
-    self.ports.ppuctrl = 0;
+    //self.ports.ppuctrl = 0;
     self.ports.ppustatus = 0b10100000;
     self.ports.ppuscroll = 0;
     self.ports.ppudata = 0;
@@ -137,7 +153,7 @@ pub fn tick(self: *Ppu) void {
                 print("VBLANK HIT IN FRAME\n", .{});
                 self.ports.ppustatus.vblank = true;
 
-                if (self.ports.ppuctrl & 0x80 > 0)
+                if (self.ports.ppuctrl.generate_nmi)
                     self.nmi.* = true;
             }
             if (self.frame_row == 261) {
@@ -259,7 +275,7 @@ pub fn memoryCallback(ctx: *c_void, map: Mmu.Map, addr: u16, data: ?u8) void {
             }
 
             // (0: add 1, going across; 1: add 32, going down)
-            self.vram_addr += if (self.ports.ppuctrl & 4 == 0) @as(u16, 1) else 32;
+            self.vram_addr += if (self.ports.ppuctrl.addr_inc == .add_1) @as(u16, 1) else 32;
         },
         .oam_dma => {
             @panic("OAM DMA accessed");

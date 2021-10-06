@@ -17,11 +17,10 @@ const Emu = @import("Emu.zig");
 const c = graphics.c;
 
 const FONT = "/usr/share/fonts/TTF/FiraCode-Regular.ttf";
-const FRAME_SIZE = .{ .w = 256, .h = 240 };
 
 pub fn main() anyerror!void {
     // Initialize UI related things, and open new window
-    const ui = try graphics.UI.init(FRAME_SIZE.w, FRAME_SIZE.h, FONT);
+    const ui = try graphics.UI.init(graphics.Frame.WIDTH, graphics.Frame.HEIGHT, FONT);
 
     // Define allocator used by the emulator
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -39,6 +38,8 @@ pub fn main() anyerror!void {
 
     var emu = try Emu.new(allocator).init(rom_filename);
     defer emu.deinit();
+
+    const test_frame = emu.showTile(0, 0);
 
     var prev_time = c.SDL_GetTicks();
 
@@ -131,7 +132,15 @@ pub fn main() anyerror!void {
             ui.setColor(.{ .r = 0, .g = 0, .b = 0, .a = 255 });
             ui.renderClear();
 
-            ui.renderText("This is a test string.", .{ .x = 0, .y = 0 }, null);
+            const r = c.SDL_Rect {
+                .x = 0,
+                .y = 0,
+                .w = graphics.Frame.WIDTH,
+                .h = graphics.Frame.HEIGHT,
+            };
+            try ui.renderFrame(&test_frame);
+
+            //ui.renderText("This is a test string.", .{ .x = 0, .y = 0 }, null);
 
             ui.present();
 
